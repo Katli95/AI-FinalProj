@@ -1,11 +1,4 @@
-from keras.models import Sequential, load_model
-from keras.layers.core import Dense, Dropout, Activation, Flatten, Reshape
-from keras.layers.convolutional import Convolution2D
-from keras.layers import MaxPool2D
-from keras import regularizers
-
 import xml.etree.ElementTree as ET
-
 
 def read_content(xml_file: str):
 

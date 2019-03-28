@@ -1,4 +1,4 @@
-    # Constants
+# Constants
 NumBoundingBoxes = 2
 Classes = ["Sphere", "Can", "Bottle"]
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
@@ -6,6 +6,7 @@ BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 GRID_W = GRID_H = 7
 NB_BOX = 2
 BATCH_SIZE = 16
+INPUT_SIZE = 416
 
 NO_OBJECT_SCALE = 1.0
 OBJECT_SCALE = 5.0
@@ -13,7 +14,6 @@ COORD_SCALE = 1.0
 CLASS_SCALE = 1.0
 ANCHORS = [0.57273, 0.677385, 1.87446, 2.06253, 3.33843,
            5.47434, 7.88282, 3.52778, 9.77052, 9.16828]
-
 
 class YOLO(object):
     def __init__(self, backend,
@@ -35,32 +35,51 @@ class YOLO(object):
         ##########################
         # Make the model
         ##########################
+        self.model = self.getTinyYoloNetwork()
 
-        # make the feature extractor layers
-        input_image = Input(shape=(self.input_size, self.input_size, 3))
+        # initialize the weights of the detection layer
+        layer = self.model.layers[-4]
+        weights = layer.get_weights()
+
+        new_kernel = np.random.normal(
+            size=weights[0].shape)/(GRID_H*GRID_W)
+        new_bias = np.random.normal(
+            size=weights[1].shape)/(GRID_H*GRID_W)
+
+        layer.set_weights([new_kernel, new_bias])
+
+        # print a summary of the whole model
+        self.model.summary()
+
+    def getTinyYoloNetwork(self):
         self.true_boxes = Input(shape=(1, 1, 1, max_box_per_image, 4))
 
-        if backend == 'Inception3':
-            self.feature_extractor = Inception3Feature(self.input_size)
-        elif backend == 'SqueezeNet':
-            self.feature_extractor = SqueezeNetFeature(self.input_size)
-        elif backend == 'MobileNet':
-            self.feature_extractor = MobileNetFeature(self.input_size)
-        elif backend == 'Full Yolo':
-            self.feature_extractor = FullYoloFeature(self.input_size)
-        elif backend == 'Tiny Yolo':
-            self.feature_extractor = TinyYoloFeature(self.input_size)
-        elif backend == 'VGG16':
-            self.feature_extractor = VGG16Feature(self.input_size)
-        elif backend == 'ResNet50':
-            self.feature_extractor = ResNet50Feature(self.input_size)
-        else:
-            raise Exception(
-                'Architecture not supported! Only support Full Yolo, Tiny Yolo, MobileNet, SqueezeNet, VGG16, ResNet50, and Inception3 at the moment!')
+        input_image = Input(shape=(input_size, input_size, 3))
 
-        print(self.feature_extractor.get_output_shape())
-        self.grid_h, self.grid_w = self.feature_extractor.get_output_shape()
-        features = self.feature_extractor.extract(input_image)
+        # Layer 1
+        x = Conv2D(16, (3,3), strides=(1,1), padding='same', name='conv_1', use_bias=False)(input_image)
+        x = BatchNormalization(name='norm_1')(x)
+        x = LeakyReLU(alpha=0.1)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+
+        # Layer 2 - 5
+        for i in range(0,4):
+            x = Conv2D(32*(2**i), (3,3), strides=(1,1), padding='same', name='conv_' + str(i+2), use_bias=False)(x)
+            x = BatchNormalization(name='norm_' + str(i+2))(x)
+            x = LeakyReLU(alpha=0.1)(x)
+            x = MaxPooling2D(pool_size=(2, 2))(x)
+
+        # Layer 6
+        x = Conv2D(512, (3,3), strides=(1,1), padding='same', name='conv_6', use_bias=False)(x)
+        x = BatchNormalization(name='norm_6')(x)
+        x = LeakyReLU(alpha=0.1)(x)
+        x = MaxPooling2D(pool_size=(2, 2), strides=(1,1), padding='same')(x)
+
+        # Layer 7 - 8
+        for i in range(0,2):
+            x = Conv2D(1024, (3,3), strides=(1,1), padding='same', name='conv_' + str(i+7), use_bias=False)(x)
+            x = BatchNormalization(name='norm_' + str(i+7))(x)
+            x = LeakyReLU(alpha=0.1)(x)
 
         # make the object detection layer
         output = Conv2D(self.nb_box * (4 + 1 + self.nb_class),
@@ -68,106 +87,19 @@ class YOLO(object):
                         padding='same',
                         name='DetectionLayer',
                         kernel_initializer='lecun_normal')(features)
-        output = Reshape((self.grid_h, self.grid_w, self.nb_box,
+        output = Reshape((GRID_H, GRID_W, self.nb_box,
                         4 + 1 + self.nb_class))(output)
         output = Lambda(lambda args: args[0])([output, self.true_boxes])
 
         self.model = Model([input_image, self.true_boxes], output)
 
-        # initialize the weights of the detection layer
-        layer = self.model.layers[-4]
-        weights = layer.get_weights()
-
-        new_kernel = np.random.normal(
-            size=weights[0].shape)/(self.grid_h*self.grid_w)
-        new_bias = np.random.normal(
-            size=weights[1].shape)/(self.grid_h*self.grid_w)
-
-        layer.set_weights([new_kernel, new_bias])
-
-        # print a summary of the whole model
-        self.model.summary()
-
-    def getTinyYoloNetwork():
-        reg = regularizers.l2()
-
-        model = Sequential()
-        model.add(Convolution2D(16, (3,3), strider=(1,1), padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.1))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
-
-        for i in range(0,4):
-            model.add(Conv2D(32*(2**i), (3,3), strides=(1,1), padding='same', use_bias=False))
-            model.add(BatchNormalization())
-            model.add(LeakyReLU(alpha=0.1))
-            model.add(MaxPooling2D(pool_size=(2, 2)))
-
-        model.add(Conv2D(512, (3,3), strides=(1,1), padding='same', use_bias=False))
-        model.add(BatchNormalization())
-        model.add(LeakyReLU(alpha=0.1))
-        model.add(MaxPooling2D(pool_size=(2, 2), strides=(1,1), padding='same'))
-
-        for i in range(0, 2):
-            model.add(Conv2D(1024, (3,3), strides=(1,1), padding='same', use_bias=False))
-            model.add(BatchNormalization())
-            model.add(LeakyReLU(alpha=0.1))
-
         return model
-
-    def getNetwork():
-        reg = regularizers.l2()
-
-        model = Sequential()
-        model.add(Convolution2D(64, (7,7), 2, padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
-        model.add(MaxPool2D((2,2), 2, padding="same"))
-
-        model.add(Convolution2D(192, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(MaxPool2D((2,2), 2, padding="same"))
-
-        model.add(Convolution2D(128, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(256, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(MaxPool2D((2,2), 2, padding="same"))
-
-        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-
-        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(MaxPool2D((2,2), 2, padding="same"))
-
-        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 2, padding="same", kernel_regularizer=reg))
-        
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-
-        model.add(Flatten())
-        model.add(Dense(4096, activation="softmax"))
-        #TODO: Add dropout
-        model.add(Dense(GRID_W*GRID_H*NumBoundingBoxes*(BoundingBoxOverhead+len(Classes)), activation="softmax"))
-        model.add(Reshape([GRID_W,GRID_H,NumBoundingBoxes, BoundingBoxOverhead + len(Classes)]))
-
-        return model
-
 
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4]
 
-        cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [
-                             self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
+        cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(GRID_W), [
+                             GRID_H]), (1, GRID_H, GRID_W, 1, 1)))
         cell_y = tf.transpose(cell_x, (0, 2, 1, 3, 4))
 
         cell_grid = tf.tile(

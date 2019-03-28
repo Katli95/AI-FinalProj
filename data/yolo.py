@@ -1,5 +1,9 @@
-GRID_W = 7
-GRID_H = 7
+    # Constants
+NumBoundingBoxes = 2
+Classes = ["Sphere", "Can", "Bottle"]
+BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
+
+GRID_W = GRID_H = 7
 NB_BOX = 2
 BATCH_SIZE = 16
 
@@ -12,8 +16,6 @@ ANCHORS = [0.57273, 0.677385, 1.87446, 2.06253, 3.33843,
 
 
 class YOLO(object):
-
-
     def __init__(self, backend,
                 input_size,
                 labels,
@@ -85,6 +87,81 @@ class YOLO(object):
 
         # print a summary of the whole model
         self.model.summary()
+
+    def getTinyYoloNetwork():
+        reg = regularizers.l2()
+
+        model = Sequential()
+        model.add(Convolution2D(16, (3,3), strider=(1,1), padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        for i in range(0,4):
+            model.add(Conv2D(32*(2**i), (3,3), strides=(1,1), padding='same', use_bias=False))
+            model.add(BatchNormalization())
+            model.add(LeakyReLU(alpha=0.1))
+            model.add(MaxPooling2D(pool_size=(2, 2)))
+
+        model.add(Conv2D(512, (3,3), strides=(1,1), padding='same', use_bias=False))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(MaxPooling2D(pool_size=(2, 2), strides=(1,1), padding='same'))
+
+        for i in range(0, 2):
+            model.add(Conv2D(1024, (3,3), strides=(1,1), padding='same', use_bias=False))
+            model.add(BatchNormalization())
+            model.add(LeakyReLU(alpha=0.1))
+
+        return model
+
+    def getNetwork():
+        reg = regularizers.l2()
+
+        model = Sequential()
+        model.add(Convolution2D(64, (7,7), 2, padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
+        model.add(MaxPool2D((2,2), 2, padding="same"))
+
+        model.add(Convolution2D(192, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(MaxPool2D((2,2), 2, padding="same"))
+
+        model.add(Convolution2D(128, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(256, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(MaxPool2D((2,2), 2, padding="same"))
+
+        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+
+        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(MaxPool2D((2,2), 2, padding="same"))
+
+        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 2, padding="same", kernel_regularizer=reg))
+        
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+
+        model.add(Flatten())
+        model.add(Dense(4096, activation="softmax"))
+        #TODO: Add dropout
+        model.add(Dense(GRID_W*GRID_H*NumBoundingBoxes*(BoundingBoxOverhead+len(Classes)), activation="softmax"))
+        model.add(Reshape([GRID_W,GRID_H,NumBoundingBoxes, BoundingBoxOverhead + len(Classes)]))
+
+        return model
+
 
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4]

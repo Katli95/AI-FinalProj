@@ -1,30 +1,47 @@
+import os
 import xml.etree.ElementTree as ET
 
 imgDir = "./data/img"
 annDir = "./data/annotations"
 
-def read_content(xml_file: str):
+def read_Imgs():
+    all_imgs = []
 
-    tree = ET.parse(xml_file)
-    root = tree.getroot()
+    for annotationFile in sorted(os.listdir(annDir)):
+        img = {'object': []}
 
-    list_with_all_boxes = []
+        tree = ET.parse(annDir + annotationFile)
 
-    for boxes in root.iter('object'):
+        for elem in tree.iter():
+            if 'filename' in elem.tag:
+                img['filename'] = imgDir + elem.text
+            if 'width' in elem.tag:
+                img['width'] = int(elem.text)
+            if 'height' in elem.tag:
+                img['height'] = int(elem.text)
+            if 'object' in elem.tag or 'part' in elem.tag:
+                obj = {}
 
-        filename = root.find('filename').text
+                for attr in list(elem):
+                    if 'name' in attr.tag:
+                        obj['name'] = attr.text
+                        img['object'] += [obj]
 
-        ymin, xmin, ymax, xmax = None, None, None, None
+                    if 'bndbox' in attr.tag:
+                        for dim in list(attr):
+                            if 'xmin' in dim.tag:
+                                obj['xmin'] = int(round(float(dim.text)))
+                            if 'ymin' in dim.tag:
+                                obj['ymin'] = int(round(float(dim.text)))
+                            if 'xmax' in dim.tag:
+                                obj['xmax'] = int(round(float(dim.text)))
+                            if 'ymax' in dim.tag:
+                                obj['ymax'] = int(round(float(dim.text)))
 
-        for box in boxes.findall("bndbox"):
-            ymin = int(box.find("ymin").text)
-            xmin = int(box.find("xmin").text)
-            ymax = int(box.find("ymax").text)
-            xmax = int(box.find("xmax").text)
+        if len(img['object']) > 0:
+            all_imgs += [img]
 
-        list_with_single_boxes = [xmin, ymin, xmax, ymax]
-        list_with_all_boxes.append(list_with_single_boxes)
+    return all_imgs
 
-    return filename, list_with_all_boxes
 
 name, boxes = read_content("file.xml")

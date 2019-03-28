@@ -55,8 +55,8 @@ def getNetwork():
     model.add(Flatten())
     model.add(Dense(4096, activation="softmax"))
     #TODO: Add dropout
-    model.add(Dense(GridW*GridH+(NumBoundingBoxes*BoundingBoxOverhead+ len(Classes)), activation="softmax"))
-    model.add(Reshape([GridW,GridH, (NumBoundingBoxes*BoundingBoxOverhead) + len(Classes)]))
+    model.add(Dense(GridW*GridH*NumBoundingBoxes*(BoundingBoxOverhead+len(Classes)), activation="softmax"))
+    model.add(Reshape([GridW,GridH,NumBoundingBoxes, BoundingBoxOverhead + len(Classes)]))
 
     return model
 

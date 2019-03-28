@@ -4,56 +4,31 @@ from keras.layers.convolutional import Convolution2D
 from keras.layers import MaxPool2D
 from keras import regularizers
 
-# Constants
-GridW = GridH = 7
-NumBoundingBoxes = 2
-Classes = ["Sphere", "Can", "Bottle"]
-BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
+import xml.etree.ElementTree as ET
 
 
-def getNetwork():
-    reg = regularizers.l2()
+def read_content(xml_file: str):
 
-    model = Sequential()
-    model.add(Convolution2D(64, (7,7), 2, padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
-    model.add(MaxPool2D((2,2), 2, padding="same"))
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
 
-    model.add(Convolution2D(192, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(MaxPool2D((2,2), 2, padding="same"))
+    list_with_all_boxes = []
 
-    model.add(Convolution2D(128, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(256, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(MaxPool2D((2,2), 2, padding="same"))
+    for boxes in root.iter('object'):
 
-    model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(256, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (3,3), 1, padding="same", kernel_regularizer=reg))
+        filename = root.find('filename').text
 
-    model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(MaxPool2D((2,2), 2, padding="same"))
+        ymin, xmin, ymax, xmax = None, None, None, None
 
-    model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(512, (1,1), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 2, padding="same", kernel_regularizer=reg))
-    
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
-    model.add(Convolution2D(1024, (3,3), 1, padding="same", kernel_regularizer=reg))
+        for box in boxes.findall("bndbox"):
+            ymin = int(box.find("ymin").text)
+            xmin = int(box.find("xmin").text)
+            ymax = int(box.find("ymax").text)
+            xmax = int(box.find("xmax").text)
 
-    model.add(Flatten())
-    model.add(Dense(4096, activation="softmax"))
-    #TODO: Add dropout
-    model.add(Dense(GridW*GridH+(NumBoundingBoxes*BoundingBoxOverhead+ len(Classes)), activation="softmax"))
-    model.add(Reshape([GridW,GridH, (NumBoundingBoxes*BoundingBoxOverhead) + len(Classes)]))
+        list_with_single_boxes = [xmin, ymin, xmax, ymax]
+        list_with_all_boxes.append(list_with_single_boxes)
 
-    return model
+    return filename, list_with_all_boxes
+
+name, boxes = read_content("file.xml")

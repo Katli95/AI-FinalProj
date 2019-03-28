@@ -13,6 +13,37 @@ Classes = ["Sphere", "Can", "Bottle"]
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 
 
+
+
+def getTinyYoloNetwork():
+    reg = regularizers.l2()
+
+    model = Sequential()
+    model.add(Convolution2D(16, (3,3), strider=(1,1), padding="same", input_shape=(448,448,3), kernel_regularizer=reg))
+    model.add(BatchNormalization())
+    model.add(LeakyReLU(alpha=0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    for i in range(0,4):
+        model.add(Conv2D(32*(2**i), (3,3), strides=(1,1), padding='same', use_bias=False))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(512, (3,3), strides=(1,1), padding='same', use_bias=False))
+    model.add(BatchNormalization())
+    model.add(LeakyReLU(alpha=0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2), strides=(1,1), padding='same'))
+
+    for i in range(0, 2):
+        model.add(Conv2D(1024, (3,3), strides=(1,1), padding='same', use_bias=False))
+        model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+
+    return model
+
+
+
 def getNetwork():
     reg = regularizers.l2()
 

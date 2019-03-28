@@ -8,13 +8,11 @@ def read_Imgs():
     all_imgs = []
 
     for annotationFile in sorted(os.listdir(annDir)):
-        img = {'object': []}
+        img = {'objects': [], 'filename': annotationFile.replace(".xml", ".jpg")}
 
-        tree = ET.parse(annDir + annotationFile)
+        tree = ET.parse(annDir + "/" + annotationFile)
 
         for elem in tree.iter():
-            if 'filename' in elem.tag:
-                img['filename'] = imgDir + elem.text
             if 'width' in elem.tag:
                 img['width'] = int(elem.text)
             if 'height' in elem.tag:
@@ -25,7 +23,7 @@ def read_Imgs():
                 for attr in list(elem):
                     if 'name' in attr.tag:
                         obj['name'] = attr.text
-                        img['object'] += [obj]
+                        img['objects'] += [obj]
 
                     if 'bndbox' in attr.tag:
                         for dim in list(attr):
@@ -38,10 +36,7 @@ def read_Imgs():
                             if 'ymax' in dim.tag:
                                 obj['ymax'] = int(round(float(dim.text)))
 
-        if len(img['object']) > 0:
+        if len(img['objects']) > 0:
             all_imgs += [img]
 
     return all_imgs
-
-
-name, boxes = read_content("file.xml")

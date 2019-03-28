@@ -1,5 +1,8 @@
 import xml.etree.ElementTree as ET
 
+imgDir = "./data/img"
+annDir = "./data/annotations"
+
 def read_content(xml_file: str):
 
     tree = ET.parse(xml_file)

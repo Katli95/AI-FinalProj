@@ -7,8 +7,7 @@ from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, Batch
 from keras.layers.advanced_activations import LeakyReLU
 
 # Constants
-NumBoundingBoxes = 2
-Classes = ["Sphere", "Can", "Bottle"]
+CLASSES = ["Sphere", "Can", "Bottle"]
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 
 GRID_W = GRID_H = 7
@@ -18,6 +17,7 @@ INPUT_SIZE = 416
 MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE = 10
 ANCHORS = [0.57273, 0.677385, 1.87446, 2.06253, 3.33843,
            5.47434, 7.88282, 3.52778, 9.77052, 9.16828]
+
 WEIGHT_PATH = "tiny_yolo_weights.h5"
 
 NO_OBJECT_SCALE = 1.0
@@ -30,15 +30,15 @@ class YOLO(object):
 
         self.input_size = INPUT_SIZE
         self.batch_size = BATCH_SIZE
+        self.max_box_per_image = MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE
 
-        self.labels = Classes
-        self.nb_class = len(Classes)
+        self.labels = CLASSES
+        self.nb_class = len(CLASSES)
+        self.nb_box = len(self.anchors)//2
+        
+        self.anchors = ANCHORS
         self.class_wt = np.ones(self.nb_class, dtype='float32')
 
-        self.anchors = ANCHORS
-        self.nb_box = len(self.anchors)//2
-
-        self.max_box_per_image = MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE
 
         ##########################
         # Make the model

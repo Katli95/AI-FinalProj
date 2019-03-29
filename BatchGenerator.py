@@ -7,7 +7,7 @@ class BatchGenerator(Sequence):
     def __init__(self, images, 
                        config, 
                        shuffle=True, 
-                       jitter=True, 
+                       jitter=True,  
                        norm=None):
         self.generator = None
 
@@ -67,7 +67,7 @@ class BatchGenerator(Sequence):
             img = cv2.imread(image_name)
             obj = train_instance['object']
             
-            
+
             # construct output from object's x, y, w, h
             true_box_index = 0
             

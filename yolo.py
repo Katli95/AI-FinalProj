@@ -12,7 +12,7 @@ Classes = ["Sphere", "Can", "Bottle"]
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 
 GRID_W = GRID_H = 7
-NB_BOX = 2
+NB_BOXES = 2
 BATCH_SIZE = 16
 INPUT_SIZE = 416
 MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE = 10
@@ -108,6 +108,22 @@ class YOLO(object):
 
         return model
 
+    def predict(self, image):
+        height, width = image.shape
+        image = cv2.resize(image, (self.input_size, self.input_size))
+
+        image = self.normalizeImage(image)
+
+        input_image = image[:,:,::-1] #Reverses the channels
+        input_image = np.expand_dims(input_image, 0)
+        dummy_array = np.zeros((1,1,1,1,self.max_box_per_image,4))
+
+        netout = self.model.predict([input_image, dummy_array])[0]
+        boxes  = decodeNetworkOutput(netout, self.anchors, self.nb_class)
+
+        return boxes
+
+
     def train(self, train_imgs,     # the list of images to train the model
                 valid_imgs,     # the list of images used to validate the model
                 train_times,    # the number of time to repeat the training set, often used for small datasets
@@ -151,10 +167,10 @@ class YOLO(object):
 
         train_generator = BatchGenerator(train_imgs, 
                                     generator_config, 
-                                    norm=self.feature_extractor.normalize)
+                                    norm=self.normalizeImage)
         valid_generator = BatchGenerator(valid_imgs, 
                                     generator_config, 
-                                    norm=self.feature_extractor.normalize,
+                                    norm=self.normalizeImage,
                                     jitter=False)   
                                     
         self.warmup_batches  = warmup_epochs * (train_times*len(train_generator) + valid_times*len(valid_generator))   
@@ -387,3 +403,38 @@ class YOLO(object):
                             message='Average Recall \t', summarize=1000)
 
         return loss
+
+    def decodeNetworkOutput(output, anchors, numberOfClasses, objectThreshold=0.3, nmsThreshold=0.3):
+
+        boxes = []
+
+        # Hér eiga að vera breytingar á class og object probabilities, til hvers er þetta?
+        # netout[..., 4]  = _sigmoid(netout[..., 4])
+        # netout[..., 5:] = netout[..., 4][..., np.newaxis] * _softmax(netout[..., 5:])
+        # netout[..., 5:] *= netout[..., 5:] > obj_threshold
+
+        for row in range(GRID_H):
+            for col in range(GRID_W):
+                for box in range(NB_BOXES):
+                    
+                    classes = output[row, col, box, -3:]
+
+                    if(np.sum(classes) > 0):
+                        x, y, w, h = output[row, col, box,:4]
+                        probabiltiyObj = output([row, col, box, 4])
+
+                        x = (col + _sigmoid(x)) / GRID_W # center position, unit: image width
+                        y = (row + _sigmoid(y)) / GRID_H # center position, unit: image height
+                        w = anchors[2 * box + 0] * np.exp(w) / GRID_W # unit: image width
+                        h = anchors[2 * box + 1] * np.exp(h) / GRID_H # unit: image height
+                        
+                        box = BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, probabiltiyObj, classes)
+                        
+                        boxes.append(box)
+        boxes = [box for box in boxes if box.get_score() > objectThreshold]
+    
+        return boxes
+
+
+    def normalizeImage(self, image):
+        return image / INPUT_SIZE

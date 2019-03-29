@@ -125,7 +125,7 @@ class YOLO(object):
         return model
 
     def predict(self, image):
-        height, width = image.shape
+        height, width, _ = image.shape
         image = cv2.resize(image, (self.input_size, self.input_size))
 
         image = self.normalizeImage(image)
@@ -169,18 +169,18 @@ class YOLO(object):
             pred_boxes  = pred_boxes[score_sort]
             
             # copy detections to all_detections
-            for label in range(generator.num_classes()):
+            for label in range(NUM_CLASSES):
                 all_detections[i][label] = pred_boxes[pred_labels == label, :]
                 
             annotations = generator.load_annotation(i)
             
             # copy detections to all_annotations
-            for label in range(generator.num_classes()):
+            for label in range(NUM_CLASSES):
                 all_annotations[i][label] = annotations[annotations[:, 4] == label, :4].copy()
 
         average_precisions = {}
 
-        for label in range(generator.num_classes()):
+        for label in range(NUM_CLASSES):
             false_positives = np.zeros((0,))
             true_positives  = np.zeros((0,))
             scores          = np.zeros((0,))

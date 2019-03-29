@@ -32,7 +32,7 @@ class BatchGenerator(Sequence):
     def load_annotation(self, i):
         annots = []
 
-        for obj in self.images[i]['object']:
+        for obj in self.images[i]['objects']:
             annot = [obj['xmin'], obj['ymin'], obj['xmax'], obj['ymax'], self.config['LABELS'].index(obj['name'])]
             annots += [annot]
 
@@ -62,7 +62,7 @@ class BatchGenerator(Sequence):
 
             #Þessi kóði var gerður inn í fallinu aug_image og skilaði all_objs og img 
             image_name = train_instance['filename']
-            img = cv2.imread(image_name)
+            img = cv2.resize(cv2.imread(image_name), (416,416))
             all_objs = copy.deepcopy(train_instance['objects'])
             
 

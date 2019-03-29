@@ -1,3 +1,11 @@
+import os
+import numpy as np
+import tensorflow as tf
+
+from keras.models import Model
+from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
+from keras.layers.advanced_activations import LeakyReLU
+
 # Constants
 NumBoundingBoxes = 2
 Classes = ["Sphere", "Can", "Bottle"]
@@ -7,57 +15,45 @@ GRID_W = GRID_H = 7
 NB_BOX = 2
 BATCH_SIZE = 16
 INPUT_SIZE = 416
+MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE = 10
+ANCHORS = [0.57273, 0.677385, 1.87446, 2.06253, 3.33843,
+           5.47434, 7.88282, 3.52778, 9.77052, 9.16828]
+WEIGHT_PATH = "tiny_yolo_weights.h5"
 
 NO_OBJECT_SCALE = 1.0
 OBJECT_SCALE = 5.0
 COORD_SCALE = 1.0
 CLASS_SCALE = 1.0
-ANCHORS = [0.57273, 0.677385, 1.87446, 2.06253, 3.33843,
-           5.47434, 7.88282, 3.52778, 9.77052, 9.16828]
 
 class YOLO(object):
-    def __init__(self, backend,
-                input_size,
-                labels,
-                max_box_per_image,
-                anchors):
+    def __init__(self):
 
-        self.input_size = input_size
+        self.input_size = INPUT_SIZE
+        self.batch_size = BATCH_SIZE
 
-        self.labels = list(labels)
-        self.nb_class = len(self.labels)
-        self.nb_box = len(anchors)//2
+        self.labels = Classes
+        self.nb_class = len(Classes)
         self.class_wt = np.ones(self.nb_class, dtype='float32')
-        self.anchors = anchors
 
-        self.max_box_per_image = max_box_per_image
+        self.anchors = ANCHORS
+        self.nb_box = len(self.anchors)//2
+
+        self.max_box_per_image = MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE
 
         ##########################
         # Make the model
         ##########################
         self.model = self.getTinyYoloNetwork()
 
-        # initialize the weights of the detection layer
-        layer = self.model.layers[-4]
-        weights = layer.get_weights()
-
-        new_kernel = np.random.normal(
-            size=weights[0].shape)/(GRID_H*GRID_W)
-        new_bias = np.random.normal(
-            size=weights[1].shape)/(GRID_H*GRID_W)
-
-        layer.set_weights([new_kernel, new_bias])
-
-        # print a summary of the whole model
         self.model.summary()
 
     def getTinyYoloNetwork(self):
-        self.true_boxes = Input(shape=(1, 1, 1, max_box_per_image, 4))
+        self.true_boxes = Input(shape=(1, 1, 1, self.max_box_per_image, 4))
 
-        input_image = Input(shape=(input_size, input_size, 3))
+        input_layer = Input(shape=(self.input_size, self.input_size, 3))
 
         # Layer 1
-        x = Conv2D(16, (3,3), strides=(1,1), padding='same', name='conv_1', use_bias=False)(input_image)
+        x = Conv2D(16, (3,3), strides=(1,1), padding='same', name='conv_1', use_bias=False)(input_layer)
         x = BatchNormalization(name='norm_1')(x)
         x = LeakyReLU(alpha=0.1)(x)
         x = MaxPooling2D(pool_size=(2, 2))(x)
@@ -81,19 +77,139 @@ class YOLO(object):
             x = BatchNormalization(name='norm_' + str(i+7))(x)
             x = LeakyReLU(alpha=0.1)(x)
 
-        # make the object detection layer
-        output = Conv2D(self.nb_box * (4 + 1 + self.nb_class),
+        # Layer 9
+        x = Conv2D(self.nb_box * (4 + 1 + self.nb_class),
                         (1, 1), strides=(1, 1),
                         padding='same',
                         name='DetectionLayer',
-                        kernel_initializer='lecun_normal')(features)
-        output = Reshape((GRID_H, GRID_W, self.nb_box,
-                        4 + 1 + self.nb_class))(output)
-        output = Lambda(lambda args: args[0])([output, self.true_boxes])
+                        kernel_initializer='lecun_normal')(x)
 
-        self.model = Model([input_image, self.true_boxes], output)
+        x = Reshape((GRID_H, GRID_W, self.nb_box,
+                        4 + 1 + self.nb_class))(x)
+
+        #This is done to incorporate the true boxes as a second parameter into the network while training
+        x = Lambda(lambda args: args[0])([x, self.true_boxes])
+
+        model = Model([input_layer, self.true_boxes], x)
+        
+        if os.path.isfile(WEIGHT_PATH):
+            model.load_weights(WEIGHT_PATH)
+
+        # initialize the weights of the detection layer
+        # layer = model.layers[-4]
+        # weights = layer.get_weights()
+
+        # new_kernel = np.random.normal(
+        #     size=weights[0].shape)/(GRID_H*GRID_W)
+        # new_bias = np.random.normal(
+        #     size=weights[1].shape)/(GRID_H*GRID_W)
+
+        # layer.set_weights([new_kernel, new_bias])
 
         return model
+
+    def train(self, train_imgs,     # the list of images to train the model
+                valid_imgs,     # the list of images used to validate the model
+                train_times,    # the number of time to repeat the training set, often used for small datasets
+                valid_times,    # the number of times to repeat the validation set, often used for small datasets
+                nb_epochs,      # number of epoches
+                learning_rate,  # the learning rate
+                batch_size,     # the size of the batch
+                warmup_epochs,  # number of initial batches to let the model familiarize with the new dataset
+                object_scale,
+                no_object_scale,
+                coord_scale,
+                class_scale,
+                saved_weights_name='best_weights.h5',
+                debug=False):     
+
+        self.batch_size = batch_size
+
+        self.object_scale    = object_scale
+        self.no_object_scale = no_object_scale
+        self.coord_scale     = coord_scale
+        self.class_scale     = class_scale
+
+        self.debug = debug
+
+        ############################################
+        # Make train and validation generators
+        ############################################
+
+        generator_config = {
+            'IMAGE_H'         : self.input_size, 
+            'IMAGE_W'         : self.input_size,
+            'GRID_H'          : self.grid_h,  
+            'GRID_W'          : self.grid_w,
+            'BOX'             : self.nb_box,
+            'LABELS'          : self.labels,
+            'CLASS'           : len(self.labels),
+            'ANCHORS'         : self.anchors,
+            'BATCH_SIZE'      : self.batch_size,
+            'TRUE_BOX_BUFFER' : self.max_box_per_image,
+        }    
+
+        train_generator = BatchGenerator(train_imgs, 
+                                    generator_config, 
+                                    norm=self.feature_extractor.normalize)
+        valid_generator = BatchGenerator(valid_imgs, 
+                                    generator_config, 
+                                    norm=self.feature_extractor.normalize,
+                                    jitter=False)   
+                                    
+        self.warmup_batches  = warmup_epochs * (train_times*len(train_generator) + valid_times*len(valid_generator))   
+
+        ############################################
+        # Compile the model
+        ############################################
+
+        optimizer = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+        self.model.compile(loss=self.custom_loss, optimizer=optimizer)
+
+        ############################################
+        # Make a few callbacks
+        ############################################
+
+        early_stop = EarlyStopping(monitor='val_loss', 
+                        min_delta=0.001, 
+                        patience=3, 
+                        mode='min', 
+                        verbose=1)
+        checkpoint = ModelCheckpoint(saved_weights_name, 
+                                    monitor='val_loss', 
+                                    verbose=1, 
+                                    save_best_only=True, 
+                                    mode='min', 
+                                    period=1)
+        tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'), 
+                                histogram_freq=0, 
+                                #write_batch_performance=True,
+                                write_graph=True, 
+                                write_images=False)
+
+        ############################################
+        # Start the training process
+        ############################################        
+
+        self.model.fit_generator(generator        = train_generator, 
+                                steps_per_epoch  = len(train_generator) * train_times, 
+                                epochs           = warmup_epochs + nb_epochs, 
+                                verbose          = 2 if debug else 1,
+                                validation_data  = valid_generator,
+                                validation_steps = len(valid_generator) * valid_times,
+                                callbacks        = [early_stop, checkpoint, tensorboard], 
+                                workers          = 3,
+                                max_queue_size   = 8)      
+
+        ############################################
+        # Compute mAP on the validation set
+        ############################################
+        average_precisions = self.evaluate(valid_generator)     
+
+        # print evaluation
+        for label, average_precision in average_precisions.items():
+            print(self.labels[label], '{:.4f}'.format(average_precision))
+        print('mAP: {:.4f}'.format(sum(average_precisions.values()) / len(average_precisions)))
 
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4]
@@ -168,7 +284,7 @@ class YOLO(object):
         Determine the masks
         """
         # coordinate mask: simply the position of the ground truth boxes (the predictors)
-        coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * self.coord_scale
+        coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * COORD_SCALE
 
         # confidence mask: penelize predictors + penalize boxes with low IOU
         # penalize the confidence of the boxes, which have IOU with some ground truth box < 0.6
@@ -200,19 +316,19 @@ class YOLO(object):
         best_ious = tf.reduce_max(iou_scores, axis=4)
         conf_mask = conf_mask + \
             tf.to_float(best_ious < 0.6) * \
-            (1 - y_true[..., 4]) * self.no_object_scale
+            (1 - y_true[..., 4]) * NO_OBJECT_SCALE
 
         # penalize the confidence of the boxes, which are reponsible for corresponding ground truth box
-        conf_mask = conf_mask + y_true[..., 4] * self.object_scale
+        conf_mask = conf_mask + y_true[..., 4] * OBJECT_SCALE
 
         # class mask: simply the position of the ground truth boxes (the predictors)
         class_mask = y_true[..., 4] * \
-            tf.gather(self.class_wt, true_box_class) * self.class_scale
+            tf.gather(self.class_wt, true_box_class) * CLASS_SCALE
 
         """
         Warm-up training
         """
-        no_boxes_mask = tf.to_float(coord_mask < self.coord_scale/2.)
+        no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE/2.)
         seen = tf.assign_add(seen, 1.)
 
         true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(seen, self.warmup_batches+1),

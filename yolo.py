@@ -6,6 +6,13 @@ from keras.models import Model
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
 
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+from BatchGenerator import BatchGenerator 
+import cv2
+
+from dataHandler import read_Imgs
+
 # Constants
 CLASSES = ["Sphere", "Can", "Bottle"]
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
@@ -119,7 +126,7 @@ class YOLO(object):
         dummy_array = np.zeros((1,1,1,1,self.max_box_per_image,4))
 
         netout = self.model.predict([input_image, dummy_array])[0]
-        boxes  = decodeNetworkOutput(netout, self.anchors, self.nb_class)
+        boxes  = self.decodeNetworkOutput(netout, self.anchors, self.nb_class)
 
         return boxes
 
@@ -219,30 +226,29 @@ class YOLO(object):
 
         return average_precisions
 
-    def train(self, train_imgs,     # the list of images to train the model
-                valid_imgs,     # the list of images used to validate the model
+    def train(self,
                 train_times,    # the number of time to repeat the training set, often used for small datasets
                 valid_times,    # the number of times to repeat the validation set, often used for small datasets
                 nb_epochs,      # number of epoches
                 learning_rate,  # the learning rate
                 batch_size,     # the size of the batch
                 warmup_epochs,  # number of initial batches to let the model familiarize with the new dataset
-                object_scale,
-                no_object_scale,
-                coord_scale,
-                class_scale,
-                saved_weights_name='best_weights.h5',
+                saved_weights_name=WEIGHT_PATH,
                 debug=False):     
-
+        
         self.batch_size = batch_size
-
-        self.object_scale    = object_scale
-        self.no_object_scale = no_object_scale
-        self.coord_scale     = coord_scale
-        self.class_scale     = class_scale
-
+        self.object_scale    = OBJECT_SCALE
+        self.no_object_scale = NO_OBJECT_SCALE
+        self.coord_scale     = COORD_SCALE
+        self.class_scale     = CLASS_SCALE
         self.debug = debug
 
+        # Load Images
+        train_imgs = read_Imgs()
+
+        validStartIndex = int(len(train_imgs)*0.8)
+        test_imgs = train_imgs[validStartIndex:]
+        train_imgs = train_imgs[:validStartIndex]
         ############################################
         # Make train and validation generators
         ############################################
@@ -250,11 +256,11 @@ class YOLO(object):
         generator_config = {
             'IMAGE_H'         : self.input_size, 
             'IMAGE_W'         : self.input_size,
-            'GRID_H'          : self.grid_h,  
-            'GRID_W'          : self.grid_w,
+            'GRID_H'          : GRID_H,
+            'GRID_W'          : GRID_W,
             'BOX'             : self.nb_box,
             'LABELS'          : self.labels,
-            'CLASS'           : len(self.labels),
+            'CLASS'           : self.nb_class,
             'ANCHORS'         : self.anchors,
             'BATCH_SIZE'      : self.batch_size,
             'TRUE_BOX_BUFFER' : self.max_box_per_image,
@@ -263,12 +269,11 @@ class YOLO(object):
         train_generator = BatchGenerator(train_imgs, 
                                     generator_config, 
                                     norm=self.normalizeImage)
-        valid_generator = BatchGenerator(valid_imgs, 
+
+        test_generator = BatchGenerator(test_imgs, 
                                     generator_config, 
                                     norm=self.normalizeImage,
-                                    jitter=False)   
-                                    
-        self.warmup_batches  = warmup_epochs * (train_times*len(train_generator) + valid_times*len(valid_generator))   
+                                    jitter=False)
 
         ############################################
         # Compile the model
@@ -306,8 +311,8 @@ class YOLO(object):
                                 steps_per_epoch  = len(train_generator) * train_times, 
                                 epochs           = warmup_epochs + nb_epochs, 
                                 verbose          = 2 if debug else 1,
-                                validation_data  = valid_generator,
-                                validation_steps = len(valid_generator) * valid_times,
+                                validation_data  = test_generator,
+                                validation_steps = len(test_generator) * valid_times,
                                 callbacks        = [early_stop, checkpoint, tensorboard], 
                                 workers          = 3,
                                 max_queue_size   = 8)      
@@ -315,7 +320,7 @@ class YOLO(object):
         ############################################
         # Compute mAP on the validation set
         ############################################
-        average_precisions = self.evaluate(valid_generator)     
+        average_precisions = self.evaluate(test_generator)     
 
         # print evaluation
         for label, average_precision in average_precisions.items():
@@ -499,7 +504,7 @@ class YOLO(object):
 
         return loss
 
-    def decodeNetworkOutput(output, anchors, numberOfClasses, objectThreshold=0.3, nmsThreshold=0.3):
+    def decodeNetworkOutput(self, output, anchors, numberOfClasses, objectThreshold=0.3, nmsThreshold=0.3):
 
         boxes = []
 

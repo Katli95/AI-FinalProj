@@ -8,7 +8,7 @@ def read_Imgs():
     all_imgs = []
 
     for annotationFile in sorted(os.listdir(annDir)):
-        img = {'objects': [], 'filename': annotationFile.replace(".xml", ".jpg")}
+        img = {'objects': [], 'filename': imgDir + "/" + annotationFile.replace(".xml", ".jpg")}
 
         tree = ET.parse(annDir + "/" + annotationFile)
 

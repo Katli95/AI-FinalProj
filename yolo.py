@@ -11,13 +11,16 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 from BatchGenerator import BatchGenerator 
 import cv2
 
+from utils import decode_netout, compute_overlap, compute_ap
+
 from dataHandler import read_Imgs
 
 # Constants
 CLASSES = ["Sphere", "Can", "Bottle"]
+NUM_CLASSES = len(CLASSES)
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 
-GRID_W = GRID_H = 7
+GRID_W = GRID_H = 13
 NB_BOXES = 2
 BATCH_SIZE = 16
 INPUT_SIZE = 416
@@ -38,12 +41,12 @@ class YOLO(object):
         self.input_size = INPUT_SIZE
         self.batch_size = BATCH_SIZE
         self.max_box_per_image = MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE
+        self.anchors = ANCHORS
 
         self.labels = CLASSES
         self.nb_class = len(CLASSES)
         self.nb_box = len(self.anchors)//2
         
-        self.anchors = ANCHORS
         self.class_wt = np.ones(self.nb_class, dtype='float32')
 
 
@@ -84,6 +87,11 @@ class YOLO(object):
             x = BatchNormalization(name='norm_' + str(i+7))(x)
             x = LeakyReLU(alpha=0.1)(x)
 
+        # x = Model(input_layer, x)
+
+        # print(x.get_output_shape_at(-1)[1:3])
+        # x = x(Input(shape=(self.input_size, self.input_size, 3)))
+
         # Layer 9
         x = Conv2D(self.nb_box * (4 + 1 + self.nb_class),
                         (1, 1), strides=(1, 1),
@@ -91,13 +99,14 @@ class YOLO(object):
                         name='DetectionLayer',
                         kernel_initializer='lecun_normal')(x)
 
-        x = Reshape((GRID_H, GRID_W, self.nb_box,
-                        4 + 1 + self.nb_class))(x)
+        x = Reshape((GRID_H, GRID_W, self.nb_box, 4 + 1 + self.nb_class))(x)
 
         #This is done to incorporate the true boxes as a second parameter into the network while training
         x = Lambda(lambda args: args[0])([x, self.true_boxes])
 
         model = Model([input_layer, self.true_boxes], x)
+
+        # model = Model(input_layer, x)
         
         if os.path.isfile(WEIGHT_PATH):
             model.load_weights(WEIGHT_PATH)
@@ -126,7 +135,7 @@ class YOLO(object):
         dummy_array = np.zeros((1,1,1,1,self.max_box_per_image,4))
 
         netout = self.model.predict([input_image, dummy_array])[0]
-        boxes  = self.decodeNetworkOutput(netout, self.anchors, self.nb_class)
+        boxes  = decode_netout(netout, self.anchors, self.nb_class)
 
         return boxes
 
@@ -135,8 +144,8 @@ class YOLO(object):
                  iou_threshold=0.3,
                  save_path=None):
 
-        all_detections  = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
-        all_annotations = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
+        all_detections  = [[None for i in range(NUM_CLASSES)] for j in range(generator.size())]
+        all_annotations = [[None for i in range(NUM_CLASSES)] for j in range(generator.size())]
 
         for i in range(generator.size()):
             raw_image = generator.load_image(i)
@@ -447,15 +456,7 @@ class YOLO(object):
         no_boxes_mask = tf.to_float(coord_mask < COORD_SCALE/2.)
         seen = tf.assign_add(seen, 1.)
 
-        true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(seen, self.warmup_batches+1),
-                lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask,
-                        true_box_wh + tf.ones_like(true_box_wh) *
-                        np.reshape(self.anchors, [1, 1, 1, self.nb_box, 2]) *
-                        no_boxes_mask,
-                        tf.ones_like(coord_mask)],
-                lambda: [true_box_xy,
-                        true_box_wh,
-                        coord_mask])
+        true_box_xy, true_box_wh, coord_mask = [true_box_xy,true_box_wh,coord_mask]
 
         """
         Finalize the loss
@@ -475,9 +476,7 @@ class YOLO(object):
         loss_class = tf.reduce_sum(
             loss_class * class_mask) / (nb_class_box + 1e-6)
 
-        loss = tf.cond(tf.less(seen, self.warmup_batches+1),
-                       lambda: loss_xy + loss_wh + loss_conf + loss_class + 10,
-                       lambda: loss_xy + loss_wh + loss_conf + loss_class)
+        loss = loss_xy + loss_wh + loss_conf + loss_class
 
         if self.debug:
             nb_true_box = tf.reduce_sum(y_true[..., 4])
@@ -504,64 +503,5 @@ class YOLO(object):
 
         return loss
 
-    def decodeNetworkOutput(self, output, anchors, numberOfClasses, objectThreshold=0.3, nmsThreshold=0.3):
-
-        boxes = []
-
-        # Hér eiga að vera breytingar á class og object probabilities, til hvers er þetta?
-        # netout[..., 4]  = _sigmoid(netout[..., 4])
-        # netout[..., 5:] = netout[..., 4][..., np.newaxis] * _softmax(netout[..., 5:])
-        # netout[..., 5:] *= netout[..., 5:] > obj_threshold
-
-        for row in range(GRID_H):
-            for col in range(GRID_W):
-                for box in range(NB_BOXES):
-                    
-                    classes = output[row, col, box, -3:]
-
-                    if(np.sum(classes) > 0):
-                        x, y, w, h = output[row, col, box,:4]
-                        probabiltiyObj = output([row, col, box, 4])
-
-                        x = (col + _sigmoid(x)) / GRID_W # center position, unit: image width
-                        y = (row + _sigmoid(y)) / GRID_H # center position, unit: image height
-                        w = anchors[2 * box + 0] * np.exp(w) / GRID_W # unit: image width
-                        h = anchors[2 * box + 1] * np.exp(h) / GRID_H # unit: image height
-                        
-                        box = BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, probabiltiyObj, classes)
-                        
-                        boxes.append(box)
-        boxes = [box for box in boxes if box.get_score() > objectThreshold]
-    
-        return boxes
-
-
     def normalizeImage(self, image):
         return image / INPUT_SIZE
-
-    def compute_overlap(a, b):
-        """
-        Code originally from https://github.com/rbgirshick/py-faster-rcnn.
-        Parameters
-        ----------
-        a: (N, 4) ndarray of float
-        b: (K, 4) ndarray of float
-        Returns
-        -------
-        overlaps: (N, K) ndarray of overlap between boxes and query_boxes
-        """
-        area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
-
-        iw = np.minimum(np.expand_dims(a[:, 2], axis=1), b[:, 2]) - np.maximum(np.expand_dims(a[:, 0], 1), b[:, 0])
-        ih = np.minimum(np.expand_dims(a[:, 3], axis=1), b[:, 3]) - np.maximum(np.expand_dims(a[:, 1], 1), b[:, 1])
-
-        iw = np.maximum(iw, 0)
-        ih = np.maximum(ih, 0)
-
-        ua = np.expand_dims((a[:, 2] - a[:, 0]) * (a[:, 3] - a[:, 1]), axis=1) + area - iw * ih
-
-        ua = np.maximum(ua, np.finfo(float).eps)
-
-        intersection = iw * ih
-
-        return intersection / ua  

@@ -1,7 +1,8 @@
-import BoundBox
-import numpy as np
+import copy
 import cv2 #open cv
-
+import numpy as np
+from keras.utils import Sequence
+from  utils import BoundBox
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 
@@ -24,9 +25,6 @@ class BatchGenerator(Sequence):
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
-
-    def num_classes(self):
-        return len(self.config['LABELS'])
 
     def size(self):
         return len(self.images)    
@@ -65,57 +63,58 @@ class BatchGenerator(Sequence):
             #Þessi kóði var gerður inn í fallinu aug_image og skilaði all_objs og img 
             image_name = train_instance['filename']
             img = cv2.imread(image_name)
-            obj = train_instance['object']
+            all_objs = copy.deepcopy(train_instance['objects'])
             
 
             # construct output from object's x, y, w, h
             true_box_index = 0
             
-            if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin'] and obj['name'] in self.config['LABELS']:
-                center_x = .5*(obj['xmin'] + obj['xmax'])
-                center_x = center_x / (float(self.config['IMAGE_W']) / self.config['GRID_W'])
-                center_y = .5*(obj['ymin'] + obj['ymax'])
-                center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
+            for obj in all_objs:
+                if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin'] and obj['name'] in self.config['LABELS']:
+                    center_x = .5*(obj['xmin'] + obj['xmax'])
+                    center_x = center_x / (float(self.config['IMAGE_W']) / self.config['GRID_W'])
+                    center_y = .5*(obj['ymin'] + obj['ymax'])
+                    center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
 
-                grid_x = int(np.floor(center_x))
-                grid_y = int(np.floor(center_y))
+                    grid_x = int(np.floor(center_x))
+                    grid_y = int(np.floor(center_y))
 
-                if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
-                    obj_indx  = self.config['LABELS'].index(obj['name'])
-                    
-                    center_w = (obj['xmax'] - obj['xmin']) / (float(self.config['IMAGE_W']) / self.config['GRID_W']) # unit: grid cell
-                    center_h = (obj['ymax'] - obj['ymin']) / (float(self.config['IMAGE_H']) / self.config['GRID_H']) # unit: grid cell
-                    
-                    box = [center_x, center_y, center_w, center_h]
-
-                    # find the anchor that best predicts this box
-                    best_anchor = -1
-                    max_iou     = -1
-                    
-                    shifted_box = BoundBox(0, 
-                                            0,
-                                            center_w,                                                
-                                            center_h)
-                    
-                    for i in range(len(self.anchors)):
-                        anchor = self.anchors[i]
-                        iou    = bbox_iou(shifted_box, anchor)
+                    if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
+                        obj_indx  = self.config['LABELS'].index(obj['name'])
                         
-                        if max_iou < iou:
-                            best_anchor = i
-                            max_iou     = iou
+                        center_w = (obj['xmax'] - obj['xmin']) / (float(self.config['IMAGE_W']) / self.config['GRID_W']) # unit: grid cell
+                        center_h = (obj['ymax'] - obj['ymin']) / (float(self.config['IMAGE_H']) / self.config['GRID_H']) # unit: grid cell
+                        
+                        box = [center_x, center_y, center_w, center_h]
+
+                        # find the anchor that best predicts this box
+                        best_anchor = -1
+                        max_iou     = -1
+                        
+                        shifted_box = BoundBox(0, 
+                                                0,
+                                                center_w,                                                
+                                                center_h)
+                        
+                        for i in range(len(self.anchors)):
+                            anchor = self.anchors[i]
+                            iou    = bbox_iou(shifted_box, anchor)
                             
-                    # assign ground truth x, y, w, h, confidence and class probs to y_batch
-                    y_batch[instance_count, grid_y, grid_x, best_anchor, 0:4] = box
-                    y_batch[instance_count, grid_y, grid_x, best_anchor, 4  ] = 1.
-                    y_batch[instance_count, grid_y, grid_x, best_anchor, 5+obj_indx] = 1
-                    
-                    # assign the true box to b_batch
-                    b_batch[instance_count, 0, 0, 0, true_box_index] = box
-                    
-                    true_box_index += 1
-                    true_box_index = true_box_index % self.config['TRUE_BOX_BUFFER']
+                            if max_iou < iou:
+                                best_anchor = i
+                                max_iou     = iou
+                                
+                        # assign ground truth x, y, w, h, confidence and class probs to y_batch
+                        y_batch[instance_count, grid_y, grid_x, best_anchor, 0:4] = box
+                        y_batch[instance_count, grid_y, grid_x, best_anchor, 4  ] = 1.
+                        y_batch[instance_count, grid_y, grid_x, best_anchor, 5+obj_indx] = 1
                         
+                        # assign the true box to b_batch
+                        b_batch[instance_count, 0, 0, 0, true_box_index] = box
+                        
+                        true_box_index += 1
+                        true_box_index = true_box_index % self.config['TRUE_BOX_BUFFER']
+                            
             # assign input image to x_batch
             if self.norm != None: 
                 x_batch[instance_count] = self.norm(img)
@@ -137,3 +136,34 @@ class BatchGenerator(Sequence):
         #print(' new batch created', idx)
 
         return [x_batch, b_batch], y_batch
+
+    def on_epoch_end(self):
+        if self.shuffle: np.random.shuffle(self.images)
+
+def bbox_iou(box1, box2):
+    intersect_w = _interval_overlap([box1.xmin, box1.xmax], [box2.xmin, box2.xmax])
+    intersect_h = _interval_overlap([box1.ymin, box1.ymax], [box2.ymin, box2.ymax])  
+    
+    intersect = intersect_w * intersect_h
+
+    w1, h1 = box1.xmax-box1.xmin, box1.ymax-box1.ymin
+    w2, h2 = box2.xmax-box2.xmin, box2.ymax-box2.ymin
+    
+    union = w1*h1 + w2*h2 - intersect
+    
+    return float(intersect) / union
+
+def _interval_overlap(interval_a, interval_b):
+    x1, x2 = interval_a
+    x3, x4 = interval_b
+
+    if x3 < x1:
+        if x4 < x1:
+            return 0
+        else:
+            return min(x2,x4) - x1
+    else:
+        if x2 < x3:
+            return 0
+        else:
+            return min(x2,x4) - x3

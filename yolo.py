@@ -123,6 +123,14 @@ class YOLO(object):
 
         return boxes
 
+    def evaluate(self,
+                 generator,
+                 save_path=None):
+
+        all_detections  = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
+        all_annotations = [[None for i in range(generator.num_classes())] for j in range(generator.size())]
+
+        
 
     def train(self, train_imgs,     # the list of images to train the model
                 valid_imgs,     # the list of images used to validate the model

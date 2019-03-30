@@ -37,7 +37,7 @@ def read_Imgs():
                                 obj['ymax'] = int(round(float(dim.text)))
 
         # TODO: REMOVE 'and all(...' ONLY FOR TESTING THE NETWORK ON SPHERES!!  
-        if len(img['objects']) > 0 and all(x == 'sphere' for x in img['objects']):
+        if len(img['objects']) > 0 and all(x['name'] == 'sphere' for x in img['objects']):
             all_imgs += [img]
 
     return all_imgs

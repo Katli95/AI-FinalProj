@@ -1,0 +1,1 @@
+<annotation><size><width>1920</width><height>1080</height><depth>3</depth></size><object><name>Bottle</name><bndbox><xmin>937</xmin><ymin>270</ymin><xmax>1172</xmax><ymax>360</ymax></bndbox></object><object><name>Bottle</name><bndbox><xmin>836</xmin><ymin>353</ymin><xmax>1217</xmax><ymax>546</ymax></bndbox></object></annotation>

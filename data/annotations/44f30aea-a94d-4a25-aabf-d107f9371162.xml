@@ -1,0 +1,1 @@
+<annotation><size><width>1920</width><height>1080</height><depth>3</depth></size><object><name>Sphere</name><bndbox><xmin>295</xmin><ymin>522</ymin><xmax>647</xmax><ymax>842</ymax></bndbox></object><object><name>Sphere</name><bndbox><xmin>567</xmin><ymin>227</ymin><xmax>937</xmax><ymax>588</ymax></bndbox></object></annotation>

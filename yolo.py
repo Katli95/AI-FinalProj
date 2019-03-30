@@ -16,7 +16,7 @@ from utils import decode_netout, compute_overlap, compute_ap
 from dataHandler import read_Imgs
 
 # Constants
-CLASSES = ["Sphere", "Can", "Bottle"]
+CLASSES = ["sphere", "can", "bottle"]
 NUM_CLASSES = len(CLASSES)
 BoundingBoxOverhead = 5 # 4 for x,y,w,h and 1 for confidence
 

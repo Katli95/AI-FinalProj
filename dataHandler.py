@@ -22,7 +22,7 @@ def read_Imgs():
 
                 for attr in list(elem):
                     if 'name' in attr.tag:
-                        obj['name'] = attr.text
+                        obj['name'] = attr.text.lower()
                         img['objects'] += [obj]
 
                     if 'bndbox' in attr.tag:

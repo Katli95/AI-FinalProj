@@ -1,0 +1,1 @@
+<annotation><size><width>1920</width><height>1080</height><depth>3</depth></size><object><name>Can</name><bndbox><xmin>868</xmin><ymin>210</ymin><xmax>1037</xmax><ymax>302</ymax></bndbox></object><object><name>Can</name><bndbox><xmin>899</xmin><ymin>122</ymin><xmax>1097</xmax><ymax>199</ymax></bndbox></object></annotation>

@@ -110,17 +110,17 @@ class YOLO(object):
         
         if os.path.isfile(WEIGHT_PATH):
             model.load_weights(WEIGHT_PATH)
-
+        else:
         # initialize the weights of the detection layer
-        # layer = model.layers[-4]
-        # weights = layer.get_weights()
+            layer = model.layers[-4]
+            weights = layer.get_weights()
 
-        # new_kernel = np.random.normal(
-        #     size=weights[0].shape)/(GRID_H*GRID_W)
-        # new_bias = np.random.normal(
-        #     size=weights[1].shape)/(GRID_H*GRID_W)
+            new_kernel = np.random.normal(
+                size=weights[0].shape)/(GRID_H*GRID_W)
+            new_bias = np.random.normal(
+                size=weights[1].shape)/(GRID_H*GRID_W)
 
-        # layer.set_weights([new_kernel, new_bias])
+            layer.set_weights([new_kernel, new_bias])
 
         return model
 

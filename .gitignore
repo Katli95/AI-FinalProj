@@ -104,3 +104,4 @@ venv.bak/
 .mypy_cache/
 
 tiny_yolo_weights.h5
+bcup_tiny_yolo_weights.h5

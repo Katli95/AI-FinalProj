@@ -11,7 +11,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 from BatchGenerator import BatchGenerator
 import cv2
 
-from utils import decode_netout, compute_overlap, compute_ap
+from utils import decode_netout, compute_overlap, compute_ap, normalizeImage
 
 from dataHandler import read_Imgs
 
@@ -40,12 +40,10 @@ class YOLO(object):
 
         self.input_size = INPUT_SIZE
         self.batch_size = BATCH_SIZE
-        self.max_box_per_image = MAXIMUM_NUMBER_OF_BOXES_PER_IMAGE
-        self.anchors = ANCHORS
 
         self.labels = CLASSES
         self.nb_class = len(CLASSES)
-        self.nb_box = len(self.anchors)//2
+        self.nb_box = NUM_BOXES
 
         self.class_wt = np.ones(self.nb_class, dtype='float32')
 
@@ -121,13 +119,13 @@ class YOLO(object):
         height, width, _ = image.shape
         image = cv2.resize(image, (self.input_size, self.input_size))
 
-        image = self.normalizeImage(image)
+        image = normalizeImage(image)
 
         input_image = image[:, :, ::-1]  # Reverses the channels
         input_image = np.expand_dims(input_image, 0)
 
         netout = self.model.predict([input_image])[0]
-        boxes = decode_netout(netout, self.anchors, self.nb_class)
+        boxes = decode_netout(netout, self.nb_class)
 
         return boxes
 
@@ -267,7 +265,6 @@ class YOLO(object):
             'BOX': self.nb_box,
             'LABELS': self.labels,
             'CLASS': self.nb_class,
-            'ANCHORS': self.anchors,
             'BATCH_SIZE': self.batch_size,
         }
 

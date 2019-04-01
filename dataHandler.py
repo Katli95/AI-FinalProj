@@ -1,5 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
+from yolo import CLASSES
 
 imgDir = "./data/img"
 annDir = "./data/annotations"
@@ -38,6 +39,7 @@ def read_Imgs():
 
         # TODO: REMOVE 'and all(...' ONLY FOR TESTING THE NETWORK ON SPHERES!!  
         if len(img['objects']) > 0 and all(x['name'] == 'sphere' for x in img['objects']):
+            img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
 
     return all_imgs

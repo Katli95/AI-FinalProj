@@ -2,26 +2,19 @@ import copy
 import cv2 #open cv
 import numpy as np
 from keras.utils import Sequence
-from  utils import BoundBox
+from  utils import BoundBox, normalizeImage
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 
-                       config, 
-                       shuffle=True, 
-                       jitter=True,  
-                       norm=None):
+                       config,
+                       checkSanity = False):
         self.generator = None
 
         self.images = images
+        np.random.shuffle(self.images)
+        
         self.config = config
-
-        self.shuffle = shuffle
-        self.jitter  = jitter
-        self.norm    = norm
-
-        self.anchors = [BoundBox(0, 0, config['ANCHORS'][2*i], config['ANCHORS'][2*i+1]) for i in range(int(len(config['ANCHORS'])//2))]
-
-        if shuffle: np.random.shuffle(self.images)
+        self.checkSanity = checkSanity
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -41,7 +34,7 @@ class BatchGenerator(Sequence):
         return np.array(annots)
 
     def load_image(self, i):
-        return cv2.imread(self.images[i]['filename'])
+        return cv2.resize(cv2.imread(self.images[i]['filename']), (self.config['IMAGE_W'],self.config['IMAGE_H']))
 
     def __getitem__(self, idx):
         l_bound = idx*self.config['BATCH_SIZE']
@@ -54,7 +47,6 @@ class BatchGenerator(Sequence):
         instance_count = 0
 
         x_batch = np.zeros((r_bound - l_bound, self.config['IMAGE_H'], self.config['IMAGE_W'], 3))           # input images TODO: Gerir þetta ráð fyrir að allar myndir séu jafn stórar?
-        b_batch = np.zeros((r_bound - l_bound, 1 , 1, 1, self.config['TRUE_BOX_BUFFER'], 4))   # list of self.config['TRUE_self.config['BOX']_BUFFER'] GT boxes
         y_batch = np.zeros((r_bound - l_bound, self.config['GRID_H'],  self.config['GRID_W'], self.config['BOX'], 4+1+len(self.config['LABELS'])))                # desired network output
 
         for train_instance in self.images[l_bound:r_bound]:
@@ -62,18 +54,18 @@ class BatchGenerator(Sequence):
 
             #Þessi kóði var gerður inn í fallinu aug_image og skilaði all_objs og img 
             image_name = train_instance['filename']
-            img = cv2.resize(cv2.imread(image_name), (416,416))
+            img = cv2.resize(cv2.imread(image_name), (self.config['IMAGE_W'],self.config['IMAGE_H']))
             all_objs = copy.deepcopy(train_instance['objects'])
             
-
+            nextBoxIndex = 0
             # construct output from object's x, y, w, h
-            true_box_index = 0
-            
             for obj in all_objs:
-                if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin'] and obj['name'] in self.config['LABELS']:
-                    center_x = .5*(obj['xmin'] + obj['xmax'])
+                if nextBoxIndex >= 2:
+                    break
+                if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
+                    center_x = (obj['xmin'] + obj['xmax'])/2
                     center_x = center_x / (float(self.config['IMAGE_W']) / self.config['GRID_W'])
-                    center_y = .5*(obj['ymin'] + obj['ymax'])
+                    center_y = (obj['ymin'] + obj['ymax'])/2
                     center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
 
                     grid_x = int(np.floor(center_x))
@@ -86,39 +78,16 @@ class BatchGenerator(Sequence):
                         center_h = (obj['ymax'] - obj['ymin']) / (float(self.config['IMAGE_H']) / self.config['GRID_H']) # unit: grid cell
                         
                         box = [center_x, center_y, center_w, center_h]
+                        if y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4] == 1:
+                            nextBoxIndex+=1
 
-                        # find the anchor that best predicts this box
-                        best_anchor = -1
-                        max_iou     = -1
-                        
-                        shifted_box = BoundBox(0, 
-                                                0,
-                                                center_w,                                                
-                                                center_h)
-                        
-                        for i in range(len(self.anchors)):
-                            anchor = self.anchors[i]
-                            iou    = bbox_iou(shifted_box, anchor)
-                            
-                            if max_iou < iou:
-                                best_anchor = i
-                                max_iou     = iou
-                                
                         # assign ground truth x, y, w, h, confidence and class probs to y_batch
-                        y_batch[instance_count, grid_y, grid_x, best_anchor, 0:4] = box
-                        y_batch[instance_count, grid_y, grid_x, best_anchor, 4  ] = 1.
-                        y_batch[instance_count, grid_y, grid_x, best_anchor, 5+obj_indx] = 1
-                        
-                        # assign the true box to b_batch
-                        b_batch[instance_count, 0, 0, 0, true_box_index] = box
-                        
-                        true_box_index += 1
-                        true_box_index = true_box_index % self.config['TRUE_BOX_BUFFER']
+                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
+                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
+                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1
                             
             # assign input image to x_batch
-            if self.norm != None: 
-                x_batch[instance_count] = self.norm(img)
-            else:
+            if self.checkSanity:
                 # plot image and bounding boxes for sanity check
                 for obj in all_objs:
                     if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
@@ -129,16 +98,18 @@ class BatchGenerator(Sequence):
                                     (0,255,0), 2)
                         
                 x_batch[instance_count] = img
+            else:
+                x_batch[instance_count] = normalizeImage(img)
 
             # increase instance counter in current batch
             instance_count += 1  
 
         #print(' new batch created', idx)
 
-        return [x_batch, b_batch], y_batch
+        return x_batch, y_batch
 
     def on_epoch_end(self):
-        if self.shuffle: np.random.shuffle(self.images)
+        np.random.shuffle(self.images)
 
 def bbox_iou(box1, box2):
     intersect_w = _interval_overlap([box1.xmin, box1.xmax], [box2.xmin, box2.xmax])

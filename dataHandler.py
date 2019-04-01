@@ -131,7 +131,7 @@ class BatchGenerator(Sequence):
                         # assign ground truth x, y, w, h, confidence and class probs to y_batch
                         y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
                         y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1
+                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
                             
             # assign input image to x_batch
             if self.checkSanity:

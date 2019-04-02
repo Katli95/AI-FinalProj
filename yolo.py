@@ -384,7 +384,7 @@ class YOLO(object):
         intersect_maxes = tf.minimum(pred_maxes, true_maxes)
         intersect_wh    = tf.maximum(intersect_maxes - intersect_mins, 0.)
         intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
-
+        
         true_areas = true_box_wh[..., 0] * true_box_wh[..., 1]
         pred_areas = pred_box_wh[..., 0] * pred_box_wh[..., 1]
 
@@ -394,7 +394,7 @@ class YOLO(object):
         # true_box_conf = iou_scores * y_true[..., 4]
         
         ### adjust class probabilities
-        true_box_class = tf.argmax(y_true[..., 5:], -1)
+        # true_box_class = tf.argmax(y_true[..., 5:], -1)
         true_box_class = y_true[..., 5:]
         
         # """
@@ -404,11 +404,12 @@ class YOLO(object):
         obj_mask = tf.expand_dims(y_true[..., 4], axis=-1)
         coord_mask = obj_mask * self.coord_scale
         noobj_mask = tf.to_float(obj_mask < 1.0) * self.no_object_scale
+        # coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * self.coord_scale
         
         # ### confidence mask: penelize predictors + penalize boxes with low IOU
         # # penalize the confidence of the boxes, which have IOU with some ground truth box < 0.6
-        # true_xy = self.true_boxes[..., 0:2]
-        # true_wh = self.true_boxes[..., 2:4]
+        # true_xy = tf.reshape(true_box_xy[..., :2], (self.batch_size, 1,1,1, GRID_DIM*GRID_DIM*NUM_BOXES,2))
+        # true_wh = tf.reshape(true_box_wh[..., 2:4], (self.batch_size, 1,1,1, GRID_DIM*GRID_DIM*NUM_BOXES,2))
         
         # true_wh_half = true_wh / 2.
         # true_mins    = true_xy - true_wh_half
@@ -442,22 +443,6 @@ class YOLO(object):
         # class_mask = y_true[..., 4] * tf.gather(self.class_wt, true_box_class) * self.class_scale       
         
         """
-        Warm-up training
-        """
-        # no_boxes_mask = tf.to_float(coord_mask < self.coord_scale/2.)
-        # seen = tf.assign_add(seen, 1.)
-        
-        # true_box_xy, true_box_wh, coord_mask = tf.cond(tf.less(seen, self.warmup_batches+1), 
-        #                       lambda: [true_box_xy + (0.5 + cell_grid) * no_boxes_mask, 
-        #                                true_box_wh + tf.ones_like(true_box_wh) * \
-        #                                np.reshape(self.anchors, [1,1,1,self.nb_box,2]) * \
-        #                                no_boxes_mask, 
-        #                                tf.ones_like(coord_mask)],
-        #                       lambda: [true_box_xy, 
-        #                                true_box_wh,
-        #                                coord_mask])
-        
-        """
         Finalize the loss
         """
         # nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
@@ -465,8 +450,8 @@ class YOLO(object):
         # nb_class_box = tf.reduce_sum(tf.to_float(class_mask > 0.0))
         loss_xy         = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy)                  * coord_mask)
         loss_wh         = tf.reduce_sum(tf.square(tf.sqrt(true_box_wh)-sqrt_pred_box_wh)    * coord_mask)
-        loss_conf_obj   = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf)              )u
-        loss_conf_noobj = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf)              )
+        loss_conf_obj   = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf)              * obj_mask[...,0])
+        loss_conf_noobj = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf)              * noobj_mask)
         loss_class      = tf.reduce_sum(tf.square(true_box_class-pred_box_class)            * obj_mask)
 
         loss = loss_xy + loss_wh + loss_class + loss_conf_obj + loss_conf_noobj 

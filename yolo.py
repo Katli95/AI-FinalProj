@@ -425,18 +425,6 @@ class YOLO(object):
         
         # loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
 
-        import keras.backend as K
-
-        if not y_true.op.type == 'Placeholder':
-
-            file_path = "./debug/0_loss.npz"
-            if(os.path.isfile(file_path)): 
-                os.remove(file_path)
-            with open(file_path, "wb+") as file:
-                np.savez(file, true=K.tf.round(y_true), pred=K.tf.round(y_pred))
-                # np.savez(file, true=y_true.eval(session=tf.keras.backend.get_session()), pred=y_pred.eval(session=tf.keras.backend.get_session()))
-            print("Model saved in path: %s" % file_path)
-
         if self.debug:
                 total_recall = tf.Variable(0.)
                 nb_true_box = tf.reduce_sum(y_true[..., 4])

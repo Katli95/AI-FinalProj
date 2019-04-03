@@ -275,9 +275,11 @@ class YOLO(object):
 
         train_generator = BatchGenerator(train_imgs,
                                          generator_config)
-
-        test_generator = BatchGenerator(test_imgs,
-                                        generator_config)
+        test_generator = BatchGenerator(train_imgs,
+                                         generator_config)
+        # TODO: FIX
+        # test_generator = BatchGenerator(test_imgs,
+        #                                 generator_config)
 
         ############################################
         # Compile the model
@@ -401,28 +403,28 @@ class YOLO(object):
         """
         Summarize the loss
         """
-        nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
-        nb_conf_box_neg = tf.reduce_sum(tf.to_float(conf_mask_no_obj > 0.0))
-        nb_conf_box_pos = tf.reduce_sum(tf.to_float(conf_mask_obj > 0.0))
-        nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
+        # nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
+        # nb_conf_box_neg = tf.reduce_sum(tf.to_float(conf_mask_no_obj > 0.0))
+        # nb_conf_box_pos = tf.reduce_sum(tf.to_float(conf_mask_obj > 0.0))
+        # nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
 
-        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy)     * coord_mask) / (nb_coord_box + 1e-6) / 2.
-        loss_wh    = tf.reduce_sum(tf.square(true_box_wh-pred_box_wh)     * coord_mask) / (nb_coord_box + 1e-6) / 2.
-        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj) / (nb_conf_box_neg + 1e-6) / 2.
-        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj) / (nb_conf_box_pos + 1e-6) / 2.
-        loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr)/(nb_obj + 1e-6)
+        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_wh    = tf.reduce_sum(tf.square(true_box_wh-pred_box_wh)     * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj, axis=[1,2,3]) #/ (nb_conf_box_neg + 1e-6) / 2.
+        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj, axis=[1,2,3]) #/ (nb_conf_box_pos + 1e-6) / 2.
+        loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr, axis=[1,2,3,4])#/(nb_obj + 1e-6)
 
         loss = loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class
 
-        zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
+        # zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
         
-        if(any(zero_losses)):
-            loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
-            file_path = "./debug/0_loss_" +  "__".join([loss_names[i] for i,x in enumerate(zero_losses) if x]) + ".npz"
-            os.remove(file_path)
-            with open(file_path, "wb") as file:
-                np.savez(file, true=y_true.eval(), pred=y_pred.eval())
-            print("Model saved in path: %s" % file_path)
+        # if(any(zero_losses)):
+        #     loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
+        #     file_path = "./debug/0_loss_" +  "__".join([loss_names[i] for i,x in enumerate(zero_losses) if x]) + ".npz"
+        #     os.remove(file_path)
+        #     with open(file_path, "wb") as file:
+        #         np.savez(file, true=y_true.eval(), pred=y_pred.eval())
+        #     print("Model saved in path: %s" % file_path)
 
         if self.debug:
                 total_recall = tf.Variable(0.)

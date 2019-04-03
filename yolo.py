@@ -462,7 +462,7 @@ class YOLO(object):
     def testImg(self, imgPath):
         img = cv2.imread(imgPath)
         boxes, netout = self.predict(img)
-        np.save("./debug/0_loss_auto_test", netout)
+        np.save("./debug/auto_pred_batch", netout)
         img = draw_boxes(img, boxes, CLASSES)
         cv2.imwrite("./data/output/" + imgPath[:-4].split("/")[-1] + "_detected" + imgPath[-4:], img)
 

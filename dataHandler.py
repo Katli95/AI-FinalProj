@@ -51,7 +51,7 @@ def read_Imgs():
             print(annotationFile)
             break
 
-    return all_imgs * 80
+    return all_imgs * 8
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 
@@ -106,13 +106,10 @@ class BatchGenerator(Sequence):
             img = cv2.resize(cv2.imread(image_name), (self.config['IMAGE_W'],self.config['IMAGE_H']))
             all_objs = copy.deepcopy(train_instance['objects'])
             
-            nextBoxIndex = 0
             # construct output from object's x, y, w, h
             for obj in all_objs:
-                if nextBoxIndex >= 2:
-                    break
                 if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
-                    center_x = (obj['xmin'] + obj['xmax'])/2
+                    center_x = (obj['xmin'] + obj['xmax'])/2 #unit: pixels
                     center_x_relative_to_image = center_x / train_instance['width']
                     center_x_in_box_units = center_x_relative_to_image * self.config['GRID_W']
                     
@@ -123,24 +120,34 @@ class BatchGenerator(Sequence):
 
                     grid_x = int(np.floor(center_x_in_box_units))
                     grid_y = int(np.floor(center_y_in_box_units))
-                    center_x_rel_to_box = center_x % 1.
-                    center_y_rel_to_box = center_y % 1.
+                    print(grid_x)
+                    print(grid_y)
+                    center_x_rel_to_box = center_x_in_box_units % 1.
+                    center_y_rel_to_box = center_y_in_box_units % 1.
 
                     if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
                         obj_indx  = self.config['LABELS'].index(obj['name'])
                         
-                        center_w = ((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) # relative to image
-                        center_h = ((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
+                        center_w = np.sqrt((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) # relative to image
+                        center_h = np.sqrt((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
                         
                         box = [center_x_rel_to_box, center_y_rel_to_box, center_w, center_h]
-                        if y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4] == 1:
-                            nextBoxIndex+=1
+                        
+                        nextBoxIndex = 0
+                        if y_batch[instance_count, grid_y, grid_x, 0, 4] == 0:
+                            nextBoxIndex = 0
+                        elif y_batch[instance_count, grid_y, grid_x, 1, 4] == 0:
+                            nextBoxIndex = 1
+                        else:
+                            continue
 
                         # assign ground truth x, y, w, h, confidence and class probs to y_batch
                         y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
                         y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
                         y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
                             
+                        nextBoxIndex+=1
+
             # assign input image to x_batch
             if self.checkSanity:
                 # plot image and bounding boxes for sanity check
@@ -152,7 +159,7 @@ class BatchGenerator(Sequence):
                                     0, 1.2e-3 * img.shape[0], 
                                     (0,255,0), 2)
                         
-                x_batch[instance_count] = img
+                x_batch[instance_count] = normalizeImage(img)
             else:
                 x_batch[instance_count] = normalizeImage(img)
 
@@ -160,7 +167,7 @@ class BatchGenerator(Sequence):
             instance_count += 1  
 
         #print(' new batch created', idx)
-
+        np.save("./debug/auto_true_batch", y_batch)
         return x_batch, y_batch
 
     def on_epoch_end(self):

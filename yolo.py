@@ -242,7 +242,6 @@ class YOLO(object):
               valid_times,    # the number of times to repeat the validation set, often used for small datasets
               nb_epochs,      # number of epoches
               learning_rate,  # the learning rate
-              warmup_epochs,  # number of initial batches to let the model familiarize with the new dataset
               debug=False):
 
         self.batch_size = BATCH_SIZE
@@ -254,10 +253,12 @@ class YOLO(object):
 
         # Load Images
         train_imgs = read_Imgs()
+        test_imgs = train_imgs
 
-        validStartIndex = int(len(train_imgs)*0.8)
-        test_imgs = train_imgs[validStartIndex:]
-        train_imgs = train_imgs[:validStartIndex]
+        #TODO: UNCOMMENT
+        # validStartIndex = int(len(train_imgs)*0.8)
+        # test_imgs = train_imgs[validStartIndex:]
+        # train_imgs = train_imgs[:validStartIndex]
         ############################################
         # Make train and validation generators
         ############################################
@@ -316,7 +317,7 @@ class YOLO(object):
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=len(
                                      train_generator) * train_times,
-                                 epochs=warmup_epochs + nb_epochs,
+                                 epochs= nb_epochs,
                                  verbose=2 if debug else 1,
                                  validation_data=test_generator,
                                  validation_steps=len(

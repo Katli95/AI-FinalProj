@@ -2,6 +2,8 @@ import cv2
 import copy
 import numpy as np
 
+from utils import draw_boxes, decode_netout
+
 CLASSES = ['sphere', 'can', 'bot']
 
 def get_true(train_instance):
@@ -42,3 +44,11 @@ def get_true(train_instance):
                 y_batch[:, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
                 y_batch[:, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
     return y_batch
+
+
+def printGround():
+    true_netout = np.load("./debug/man_true_batch.npy")[0]
+    boxes = decode_netout(true_netout, 3)
+    img = cv2.imread("./data/img/022dbb19-2f9c-4fea-bfd1-292260878db0.jpg")
+    img = draw_boxes(img, boxes, ['sphere','can','bottle'])
+    cv2.imwrite("./man.jpg", img)

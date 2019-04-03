@@ -82,8 +82,8 @@ def decode_netout(netout, nb_class, obj_threshold=0.3, nms_threshold=0.3):
 
                     x = (col + x) / grid_w # center position, unit: image width
                     y = (row + y) / grid_h # center position, unit: image height
-                    w = np.square(w)
-                    h = np.square(h)
+                    w = np.square(w) #unit: image width
+                    h = np.square(h) #unit: image height
                     confidence = netout[row,col,boxIndex,4]
                     
                     box = BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, confidence, classes)

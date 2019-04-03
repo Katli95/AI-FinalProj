@@ -127,8 +127,8 @@ class YOLO(object):
 
         image = normalizeImage(image)
 
-        input_image = image[:, :, ::-1]  # Reverses the channels
-        input_image = np.expand_dims(input_image, 0)
+        # input_image = image[:, :, ::-1]  # Reverses the channels
+        input_image = np.expand_dims(image, 0)
 
         netout = self.model.predict([input_image])[0]
         boxes = decode_netout(netout, self.nb_class)
@@ -302,7 +302,7 @@ class YOLO(object):
                                      monitor='val_loss',
                                      verbose=1,
                                      save_best_only=True,
-                                     save_weights_only=True
+                                     save_weights_only=True,
                                      mode='min',
                                      period=1)
         tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'),
@@ -341,6 +341,11 @@ class YOLO(object):
 
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4] #Masking out the four dimension Batch, width, height, num_box
+
+        # cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
+        # cell_y = tf.transpose(cell_x, (0,2,1,3,4))
+
+        # cell_grid = tf.tile(tf.concat([cell_x,cell_y], -1), [self.batch_size, 1, 1, self.nb_box, 1])
 
         """
         Load prediction

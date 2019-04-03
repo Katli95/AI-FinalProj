@@ -48,8 +48,9 @@ def read_Imgs():
         if len(img['objects']) > 0 and all(x['name'] == 'sphere' for x in img['objects']):
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
+            break
 
-    return all_imgs
+    return all_imgs * 80
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 

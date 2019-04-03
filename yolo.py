@@ -242,7 +242,6 @@ class YOLO(object):
               nb_epochs,      # number of epoches
               learning_rate,  # the learning rate
               warmup_epochs,  # number of initial batches to let the model familiarize with the new dataset
-              saved_weights_name=WEIGHT_PATH,
               debug=False):
 
         self.batch_size = BATCH_SIZE
@@ -298,11 +297,11 @@ class YOLO(object):
                                    patience=3,
                                    mode='min',
                                    verbose=1)
-        checkpoint = ModelCheckpoint(saved_weights_name,
+        checkpoint = ModelCheckpoint(WEIGHT_PATH,
                                      monitor='val_loss',
                                      verbose=1,
                                      save_best_only=True,
-                                     save_weights_only=True
+                                     save_weights_only=True,
                                      mode='min',
                                      period=1)
         tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'),

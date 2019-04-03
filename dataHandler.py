@@ -51,7 +51,7 @@ def read_Imgs():
             print(annotationFile)
             break
 
-    return all_imgs * 8
+    return all_imgs * 80
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 

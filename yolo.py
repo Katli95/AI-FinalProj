@@ -17,7 +17,7 @@ CLASS_WEIGHTS = np.array([1.5,0.7,0.5], dtype='float32')
 from dataHandler import BatchGenerator, read_Imgs
 import cv2
 
-from utils import decode_netout, compute_overlap, compute_ap, normalizeImage
+from utils import decode_netout, compute_overlap, compute_ap, normalizeImage, draw_boxes
 
 # Constants
 NUM_CLASSES = len(CLASSES)
@@ -28,7 +28,7 @@ NUM_BOXES = 2
 NUM_DENSE_NODES = (GRID_DIM*GRID_DIM*NUM_BOXES*(BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES))
 OUTPUT_SHAPE = (GRID_DIM, GRID_DIM, NUM_BOXES, BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES)
 
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 INPUT_SIZE = 448
 
 WEIGHT_PATH = "tiny_yolov1_weights.h5"
@@ -319,10 +319,10 @@ class YOLO(object):
                                  validation_data=test_generator,
                                  validation_steps=len(
                                      test_generator) * valid_times,
-                                 callbacks=[early_stop,
+                                 callbacks=[#early_stop,
                                             checkpoint, tensorboard],
-                                 workers=3,
-                                 max_queue_size=8)
+                                 workers=1,
+                                 max_queue_size=3)
 
         ############################################
         # Compute mAP on the validation set
@@ -479,3 +479,10 @@ class YOLO(object):
                 loss = tf.Print(loss, [total_recall], message='Average Recall \t')
 
         return loss
+
+    def testImg(self, imgPath):
+        img = cv2.imread(imgPath)
+        boxes = self.predict(img)
+        img = draw_boxes(img, boxes, CLASSES)
+        cv2.imwrite("./data/output/" + imgPath[:-4].split("/")[-1] + "_detected" + imgPath[-4:], img)
+

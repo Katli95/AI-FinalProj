@@ -116,6 +116,7 @@ class YOLO(object):
         model.add(Reshape(OUTPUT_SHAPE))
 
         if os.path.isfile(WEIGHT_PATH):
+            print("Reloading weights from " + WEIGHT_PATH)
             model.load_weights(WEIGHT_PATH)
 
         return model

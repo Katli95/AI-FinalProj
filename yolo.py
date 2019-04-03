@@ -274,11 +274,9 @@ class YOLO(object):
 
         train_generator = BatchGenerator(train_imgs,
                                          generator_config)
-        test_generator = BatchGenerator(train_imgs,
-                                         generator_config)
-        # TODO: FIX
-        # test_generator = BatchGenerator(test_imgs,
-        #                                 generator_config)
+        
+        test_generator = BatchGenerator(test_imgs,
+                                        generator_config)
 
         ############################################
         # Compile the model
@@ -414,7 +412,7 @@ class YOLO(object):
         # nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
 
         loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
-        loss_wh    = tf.reduce_sum(tf.square(true_box_wh-pred_box_wh)     * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_wh    = tf.reduce_sum(tf.square(tf.sqrt(true_box_wh)-sqrt_pred_box_wh)     * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
         loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj, axis=[1,2,3]) #/ (nb_conf_box_neg + 1e-6) / 2.
         loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj, axis=[1,2,3]) #/ (nb_conf_box_pos + 1e-6) / 2.
         loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr, axis=[1,2,3,4])#/(nb_obj + 1e-6)

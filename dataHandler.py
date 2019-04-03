@@ -129,8 +129,8 @@ class BatchGenerator(Sequence):
                     if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
                         obj_indx  = self.config['LABELS'].index(obj['name'])
                         
-                        center_w = ((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) * self.config['GRID_W'] # unit: grid cell
-                        center_h = ((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) * self.config['GRID_H'] # unit: grid cell
+                        center_w = ((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) # relative to image
+                        center_h = ((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
                         
                         box = [center_x_rel_to_box, center_y_rel_to_box, center_w, center_h]
                         if y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4] == 1:

@@ -133,7 +133,7 @@ class YOLO(object):
         netout = self.model.predict([input_image])[0]
         boxes = decode_netout(netout, self.nb_class)
 
-        return boxes
+        return boxes, netout
 
     def evaluate(self,
                  generator,
@@ -456,7 +456,8 @@ class YOLO(object):
 
     def testImg(self, imgPath):
         img = cv2.imread(imgPath)
-        boxes = self.predict(img)
+        boxes, netout = self.predict(img)
+        np.save("./debug/0_loss_auto_test", netout)
         img = draw_boxes(img, boxes, CLASSES)
         cv2.imwrite("./data/output/" + imgPath[:-4].split("/")[-1] + "_detected" + imgPath[-4:], img)
 

@@ -339,8 +339,6 @@ class YOLO(object):
             sum(average_precisions.values()) / len(average_precisions)))
 
     def custom_loss(self, y_true, y_pred):
-        mask_shape = tf.shape(y_true)[:4] #Masking out the four dimension Batch, width, height, num_box
-
         # cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
         # cell_y = tf.transpose(cell_x, (0,2,1,3,4))
 
@@ -369,7 +367,8 @@ class YOLO(object):
         true_box_xy = y_true[..., 0:2] # relative position to the containing cell
 
         ### adjust w and h
-        true_box_wh = y_true[..., 2:4] # number of cells accross, horizontally and vertically
+        sqrt_true_box_wh = y_true[..., 2:4] # number of cells accross, horizontally and vertically
+        true_box_wh = tf.square(sqrt_true_box_wh)
 
         ### Find iou for conf given obj, else 0
         true_wh_half = true_box_wh / 2.
@@ -414,7 +413,7 @@ class YOLO(object):
         # nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
 
         loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
-        loss_wh    = tf.reduce_sum(tf.square(tf.sqrt(true_box_wh)-sqrt_pred_box_wh)     * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_wh    = tf.reduce_sum(tf.square(sqrt_true_box_wh-sqrt_pred_box_wh) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
         loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj, axis=[1,2,3]) #/ (nb_conf_box_neg + 1e-6) / 2.
         loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj, axis=[1,2,3]) #/ (nb_conf_box_pos + 1e-6) / 2.
         loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr, axis=[1,2,3,4])#/(nb_obj + 1e-6)

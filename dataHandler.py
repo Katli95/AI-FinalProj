@@ -48,6 +48,7 @@ def read_Imgs():
         if len(img['objects']) > 0 and all(x['name'] == 'sphere' for x in img['objects']):
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
+            print(annotationFile)
             break
 
     return all_imgs * 80
@@ -118,6 +119,8 @@ class BatchGenerator(Sequence):
 
                     grid_x = int(np.floor(center_x))
                     grid_y = int(np.floor(center_y))
+                    center_x = center_x % 1.
+                    center_y = center_y % 1.
 
                     if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
                         obj_indx  = self.config['LABELS'].index(obj['name'])

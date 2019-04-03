@@ -127,8 +127,8 @@ class YOLO(object):
 
         image = normalizeImage(image)
 
-        input_image = image[:, :, ::-1]  # Reverses the channels
-        input_image = np.expand_dims(input_image, 0)
+        # input_image = image[:, :, ::-1]  # Reverses the channels
+        input_image = np.expand_dims(image, 0)
 
         netout = self.model.predict([input_image])[0]
         boxes = decode_netout(netout, self.nb_class)
@@ -341,6 +341,11 @@ class YOLO(object):
     def custom_loss(self, y_true, y_pred):
         mask_shape = tf.shape(y_true)[:4] #Masking out the four dimension Batch, width, height, num_box
 
+        # cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
+        # cell_y = tf.transpose(cell_x, (0,2,1,3,4))
+
+        # cell_grid = tf.tile(tf.concat([cell_x,cell_y], -1), [self.batch_size, 1, 1, self.nb_box, 1])
+
         """
         Load prediction
         """
@@ -418,13 +423,19 @@ class YOLO(object):
 
         # zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
         
-        # if(any(zero_losses)):
-        #     loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
-        #     file_path = "./debug/0_loss_" +  "__".join([loss_names[i] for i,x in enumerate(zero_losses) if x]) + ".npz"
-        #     os.remove(file_path)
-        #     with open(file_path, "wb") as file:
-        #         np.savez(file, true=y_true.eval(), pred=y_pred.eval())
-        #     print("Model saved in path: %s" % file_path)
+        # loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
+
+        import keras.backend as K
+
+        if not y_true.op.type == 'Placeholder':
+
+            file_path = "./debug/0_loss.npz"
+            if(os.path.isfile(file_path)): 
+                os.remove(file_path)
+            with open(file_path, "wb+") as file:
+                np.savez(file, true=K.tf.round(y_true), pred=K.tf.round(y_pred))
+                # np.savez(file, true=y_true.eval(session=tf.keras.backend.get_session()), pred=y_pred.eval(session=tf.keras.backend.get_session()))
+            print("Model saved in path: %s" % file_path)
 
         if self.debug:
                 total_recall = tf.Variable(0.)

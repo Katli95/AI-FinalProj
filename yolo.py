@@ -414,6 +414,16 @@ class YOLO(object):
 
         loss = loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class
 
+        zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
+        
+        if(any(zero_losses)):
+            loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
+            file_path = "./debug/0_loss_" +  "__".join([loss_names[i] for i,x in enumerate(zero_losses) if x]) + ".npz"
+            os.remove(file_path)
+            with open(file_path, "wb") as file:
+                np.savez(file, true=y_true.eval(), pred=y_pred.eval())
+            print("Model saved in path: %s" % file_path)
+
         if self.debug:
                 total_recall = tf.Variable(0.)
                 nb_true_box = tf.reduce_sum(y_true[..., 4])

@@ -151,7 +151,7 @@ class YOLO(object):
             raw_height, raw_width, raw_channels = raw_image.shape
 
             # make the boxes and the labels
-            pred_boxes = self.predict(raw_image)
+            pred_boxes, _ = self.predict(raw_image)
 
             score = np.array([box.score for box in pred_boxes])
             pred_labels = np.array([box.label for box in pred_boxes])

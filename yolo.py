@@ -302,6 +302,7 @@ class YOLO(object):
                                      monitor='val_loss',
                                      verbose=1,
                                      save_best_only=True,
+                                     save_weights_only=True
                                      mode='min',
                                      period=1)
         tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'),

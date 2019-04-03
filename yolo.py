@@ -6,7 +6,8 @@ import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
-from keras.backend import print_tensor
+import keras.backend as K
+
 
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
@@ -284,7 +285,7 @@ class YOLO(object):
 
         optimizer = Adam(lr=learning_rate, beta_1=0.9,
                          beta_2=0.999, epsilon=1e-08, decay=0.0)
-        self.model.compile(loss=self.custom_loss, optimizer=optimizer)
+        self.model.compile(loss=self.sanity_loss, optimizer=optimizer)
 
         ############################################
         # Make a few callbacks
@@ -453,6 +454,9 @@ class YOLO(object):
                 loss = tf.Print(loss, [total_recall], message='Average Recall \t')
 
         return loss
+
+    def sanity_loss(self, y_true, y_pred):
+        return K.sum(K.square(y_pred - y_true), axis=-1)
 
     def testImg(self, imgPath):
         img = cv2.imread(imgPath)

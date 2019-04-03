@@ -120,8 +120,6 @@ class BatchGenerator(Sequence):
 
                     grid_x = int(np.floor(center_x_in_box_units))
                     grid_y = int(np.floor(center_y_in_box_units))
-                    print(grid_x)
-                    print(grid_y)
                     center_x_rel_to_box = center_x_in_box_units % 1.
                     center_y_rel_to_box = center_y_in_box_units % 1.
 

@@ -278,7 +278,8 @@ class YOLO(object):
                                          generator_config)
         
         test_generator = BatchGenerator(test_imgs,
-                                        generator_config)
+                                        generator_config,
+                                        should_aug=False)
 
         ############################################
         # Compile the model

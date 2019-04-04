@@ -64,6 +64,8 @@ def draw_boxes(image, boxes, labels):
 def decode_netout(netout, nb_class, obj_threshold=0.3, nms_threshold=0.3):
     grid_h, grid_w, nb_box = netout.shape[:3]
 
+    netout[..., 4] = _sigmoid(netout[..., 4])
+
     boxes = []
     
     # decode the output by the network
@@ -84,7 +86,7 @@ def decode_netout(netout, nb_class, obj_threshold=0.3, nms_threshold=0.3):
                     y = (row + y) / grid_h # center position, unit: image height
                     w = np.square(w) #unit: image width
                     h = np.square(h) #unit: image height
-                    confidence = netout[row,col,boxIndex,4]
+                    confidence = np.clip(netout[row,col,boxIndex,4], 0, 1)
                     
                     box = BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, confidence, classes)
                     

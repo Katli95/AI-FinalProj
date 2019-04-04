@@ -252,13 +252,12 @@ class YOLO(object):
         self.debug = debug
 
         # Load Images
-        train_imgs = read_Imgs()
-        test_imgs = train_imgs
 
-        #TODO: UNCOMMENT
-        # validStartIndex = int(len(train_imgs)*0.8)
-        # test_imgs = train_imgs[validStartIndex:]
-        # train_imgs = train_imgs[:validStartIndex]
+        train_imgs = read_Imgs()
+        
+        validStartIndex = int(len(train_imgs)*0.8)
+        test_imgs = train_imgs[validStartIndex:]
+        train_imgs = train_imgs[:validStartIndex]
         ############################################
         # Make train and validation generators
         ############################################
@@ -286,7 +285,7 @@ class YOLO(object):
 
         optimizer = Adam(lr=learning_rate, beta_1=0.9,
                          beta_2=0.999, epsilon=1e-08, decay=0.0)
-        self.model.compile(loss=self.sanity_loss, optimizer=optimizer)
+        self.model.compile(loss=self.custom_loss, optimizer=optimizer)
 
         ############################################
         # Make a few callbacks
@@ -294,7 +293,7 @@ class YOLO(object):
 
         early_stop = EarlyStopping(monitor='val_loss',
                                    min_delta=0.001,
-                                   patience=3,
+                                   patience=5,
                                    mode='min',
                                    verbose=1)
         checkpoint = ModelCheckpoint(WEIGHT_PATH,
@@ -304,8 +303,9 @@ class YOLO(object):
                                      save_weights_only=True,
                                      mode='min',
                                      period=1)
-        tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'),
-                                  histogram_freq=0,
+        tensorboard = TensorBoard(log_dir="training_metadata/1/",
+                                #   histogram_freq=2,
+                                #   write_grads=True,
                                   # write_batch_performance=True,
                                   write_graph=True,
                                   write_images=False)
@@ -322,8 +322,7 @@ class YOLO(object):
                                  validation_data=test_generator,
                                  validation_steps=len(
                                      test_generator) * valid_times,
-                                 callbacks=[#early_stop,
-                                            checkpoint, tensorboard],
+                                 callbacks=[early_stop,checkpoint, tensorboard],
                                  workers=1,
                                  max_queue_size=3)
 

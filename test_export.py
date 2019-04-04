@@ -7,18 +7,14 @@ imgs = read_Imgs()
 train_instance = {
     'objects':
     [
-        {
-            'name': 'bottle',
-            'xmin': 773,
-            'ymin': 448,
-            'xmax': 1045,
-            'ymax': 660
-        }
+        {'name': 'sphere', 'xmin': 1358, 'ymin': 107, 'xmax': 1472, 'ymax': 226},
+        {'name': 'can', 'xmin': 1215, 'ymin': 533, 'xmax': 1412, 'ymax': 616},
+        {'name': 'bottle', 'xmin': 555, 'ymin': 548, 'xmax': 739, 'ymax': 736},
+        {'name': 'bottle', 'xmin': 1232, 'ymin': 419, 'xmax': 1475, 'ymax': 505}
     ],
-    'filename': './data/img/01027dcc-3dfb-4881-9fd2-12545e12dda3.jpg',
+    'filename': './data/img/685be22c-c384-4302-b0f9-080b77f10a27.jpg',
     'width': 1920,
-    'height': 1080
-}
+    'height': 1080}
 
 generator_config = {
     'IMAGE_H': 448,

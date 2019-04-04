@@ -8,8 +8,8 @@ import numpy as np
 from keras.utils import Sequence
 
 from utils import BoundBox, normalizeImage
-from yolo import CLASSES
-from data_aug.data_aug import *
+from config import CLASSES
+import data_aug.data_aug as aug
 
 imgDir = "./data/img"
 annDir = "./data/annotations"
@@ -63,7 +63,7 @@ class BatchGenerator(Sequence):
         self.config = config
         self.should_aug = should_aug
         self.checkSanity = checkSanity
-        self.seq = Sequence([RandomHSV(40, 40, 30),RandomHorizontalFlip(), RandomScale(), RandomTranslate(0.3,diff=True), RandomRotate(10)])
+        self.seq = aug.Sequence([aug.RandomHSV(40, 40, 30),aug.RandomHorizontalFlip(), aug.RandomScale(), aug.RandomTranslate(0.3,diff=True), aug.RandomRotate(10)])
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -103,36 +103,22 @@ class BatchGenerator(Sequence):
 
             #Þessi kóði var gerður inn í fallinu aug_image og skilaði all_objs og img 
             image_name = train_instance['filename']
-            img = cv2.resize(cv2.imread(image_name), (self.config['IMAGE_W'],self.config['IMAGE_H']))
+            img = cv2.imread(image_name)
             all_objs = copy.deepcopy(train_instance['objects'])
             
-            boxes = np.array([])
+            boxes = self.parse_objects(all_objs)
 
-            # construct output from object's x, y, w, h
-            for obj in all_objs:
-                if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
-                    center_x = (obj['xmin'] + obj['xmax'])/2 #unit: pixels
-                    center_x_relative_to_image = center_x / train_instance['width']
-                    center_x_in_box_units = center_x_relative_to_image * self.config['GRID_W']
-                    
-                    center_y = (obj['ymin'] + obj['ymax'])/2
-                    center_y_relative_to_image = center_y / train_instance['height']
-                    center_y_in_box_units = center_y_relative_to_image * self.config['GRID_H']
-                    # center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
+            if self.should_aug and random.random() < 0.6:
+                img, boxes = self.seq(img.copy(), boxes.copy())
 
-                    grid_x = int(np.floor(center_x_in_box_units))
-                    grid_y = int(np.floor(center_y_in_box_units))
-                    center_x_rel_to_box = center_x_in_box_units % 1.
-                    center_y_rel_to_box = center_y_in_box_units % 1.
+            img = cv2.resize(img, (self.config['IMAGE_W'],self.config['IMAGE_H']))
 
-                    if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
-                        obj_indx  = self.config['LABELS'].index(obj['name'])
-                        
-                        center_w = np.sqrt((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) # relative to image
-                        center_h = np.sqrt((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
-                        
-                        box = [center_x_rel_to_box, center_y_rel_to_box, center_w, center_h]
-                
+            boxes = self.encode_boxes_for_netout(boxes, train_instance)
+
+            for final_box in boxes:
+                box = final_box[0]
+                grid_x, grid_y, obj_indx = np.array(final_box[1]).astype(int)
+            
                 nextBoxIndex = 0
                 if y_batch[instance_count, grid_y, grid_x, 0, 4] == 0:
                     nextBoxIndex = 0
@@ -145,7 +131,6 @@ class BatchGenerator(Sequence):
                 y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
                 y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
                 y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
-                    
                 nextBoxIndex+=1
 
             # assign input image to x_batch
@@ -172,3 +157,37 @@ class BatchGenerator(Sequence):
 
     def on_epoch_end(self):
         np.random.shuffle(self.images)
+
+    def parse_objects(self, objects):
+        boxes = []
+        for obj in objects:
+            if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
+                obj_indx  = self.config['LABELS'].index(obj['name'])
+                boxes += [[obj['xmin'], obj['ymin'], obj['xmax'], obj['ymax'], obj_indx]]
+        return np.array(boxes, dtype='float64')
+
+    def encode_boxes_for_netout(self, raw_boxes, train_instance):
+        translated_boxes = []
+        for box in raw_boxes:
+            center_x = (box[0] + box[2])/2
+            center_x_relative_to_image = center_x / train_instance['width']
+            center_x_in_box_units = center_x_relative_to_image * self.config['GRID_W']
+
+            center_y = (box[1] + box[3])/2
+            center_y_relative_to_image = center_y / train_instance['height']
+            center_y_in_box_units = center_y_relative_to_image * self.config['GRID_H']
+
+            grid_x = int(np.floor(center_x_in_box_units))
+            grid_y = int(np.floor(center_y_in_box_units))
+            center_x_rel_to_box = center_x_in_box_units % 1.
+            center_y_rel_to_box = center_y_in_box_units % 1.
+            
+            if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
+                obj_indx  = int(box[-1])
+                
+                center_w = np.sqrt((box[2] - box[0]) / float(train_instance['width'])) # relative to image
+                center_h = np.sqrt((box[3] - box[1]) / float(train_instance['height'])) # relative to image
+                
+                translated_boxes += [[[center_x_rel_to_box, center_y_rel_to_box, center_w, center_h], [grid_x, grid_y, obj_indx]]]
+
+        return translated_boxes

@@ -64,11 +64,12 @@ def draw_boxes(image, boxes, labels):
 def decode_netout(netout, nb_class, obj_threshold=0.3, nms_threshold=0.3):
     grid_h, grid_w, nb_box = netout.shape[:3]
 
+    netout[..., 4] = _sigmoid(netout[..., 4])
+
     boxes = []
     
     # decode the output by the network
-    netout[..., 4]  = _sigmoid(netout[..., 4])
-    netout[..., 5:] = netout[..., 4][..., np.newaxis] * _softmax(netout[..., 5:])
+    netout[..., 5:] = netout[..., 4][..., np.newaxis] * netout[..., 5:]
     netout[..., 5:] *= netout[..., 5:] > obj_threshold
     
     for row in range(grid_h):
@@ -81,9 +82,11 @@ def decode_netout(netout, nb_class, obj_threshold=0.3, nms_threshold=0.3):
                     # first 4 elements are x, y, w, and h
                     x, y, w, h = netout[row,col,boxIndex,:4]
 
-                    x = (col + _sigmoid(x)) / grid_w # center position, unit: image width
-                    y = (row + _sigmoid(y)) / grid_h # center position, unit: image height
-                    confidence = netout[row,col,boxIndex,4]
+                    x = (col + x) / grid_w # center position, unit: image width
+                    y = (row + y) / grid_h # center position, unit: image height
+                    w = np.square(w) #unit: image width
+                    h = np.square(h) #unit: image height
+                    confidence = np.clip(netout[row,col,boxIndex,4], 0, 1)
                     
                     box = BoundBox(x-w/2, y-h/2, x+w/2, y+h/2, confidence, classes)
                     
@@ -191,22 +194,3 @@ def _softmax(x, axis=-1, t=-100.):
     e_x = np.exp(x)
     
     return e_x / e_x.sum(axis, keepdims=True)
-
-def draw_boxes(image, boxes, labels):
-    image_h, image_w, _ = image.shape
-
-    for box in boxes:
-        xmin = int(box.xmin*image_w)
-        ymin = int(box.ymin*image_h)
-        xmax = int(box.xmax*image_w)
-        ymax = int(box.ymax*image_h)
-
-        cv2.rectangle(image, (xmin,ymin), (xmax,ymax), (0,255,0), 3)
-        cv2.putText(image, 
-                    labels[box.get_label()] + ' ' + str(box.get_score()), 
-                    (xmin, ymin - 13), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    1e-3 * image_h, 
-                    (0,255,0), 2)
-        
-    return image  

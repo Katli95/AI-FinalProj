@@ -1,5 +1,6 @@
 import os
 import copy
+import random
 import xml.etree.ElementTree as ET
 
 import cv2 #open cv
@@ -8,6 +9,7 @@ from keras.utils import Sequence
 
 from utils import BoundBox, normalizeImage
 from yolo import CLASSES
+from data_aug.data_aug import *
 
 imgDir = "./data/img"
 annDir = "./data/annotations"
@@ -45,23 +47,23 @@ def read_Imgs():
                                 obj['ymax'] = int(round(float(dim.text)))
 
         # TODO: REMOVE 'and all(...' ONLY FOR TESTING THE NETWORK ON SPHERES!!  
-        if len(img['objects']) > 0 and all(x['name'] == 'sphere' for x in img['objects']):
+        if len(img['objects']) > 0:
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
 
     return all_imgs
 
 class BatchGenerator(Sequence):
-    def __init__(self, images, 
-                       config,
-                       checkSanity = False):
+    def __init__(self, images, config, should_aug=True, checkSanity = False):
         self.generator = None
 
         self.images = images
         np.random.shuffle(self.images)
         
         self.config = config
+        self.should_aug = should_aug
         self.checkSanity = checkSanity
+        self.seq = Sequence([RandomHSV(40, 40, 30),RandomHorizontalFlip(), RandomScale(), RandomTranslate(0.3,diff=True), RandomRotate(10)])
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -104,47 +106,60 @@ class BatchGenerator(Sequence):
             img = cv2.resize(cv2.imread(image_name), (self.config['IMAGE_W'],self.config['IMAGE_H']))
             all_objs = copy.deepcopy(train_instance['objects'])
             
-            nextBoxIndex = 0
+            boxes = np.array([])
+
             # construct output from object's x, y, w, h
             for obj in all_objs:
-                if nextBoxIndex >= 2:
-                    break
                 if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
-                    center_x = (obj['xmin'] + obj['xmax'])/2
-                    center_x = center_x / (float(self.config['IMAGE_W']) / self.config['GRID_W'])
+                    center_x = (obj['xmin'] + obj['xmax'])/2 #unit: pixels
+                    center_x_relative_to_image = center_x / train_instance['width']
+                    center_x_in_box_units = center_x_relative_to_image * self.config['GRID_W']
+                    
                     center_y = (obj['ymin'] + obj['ymax'])/2
-                    center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
+                    center_y_relative_to_image = center_y / train_instance['height']
+                    center_y_in_box_units = center_y_relative_to_image * self.config['GRID_H']
+                    # center_y = center_y / (float(self.config['IMAGE_H']) / self.config['GRID_H'])
 
-                    grid_x = int(np.floor(center_x))
-                    grid_y = int(np.floor(center_y))
+                    grid_x = int(np.floor(center_x_in_box_units))
+                    grid_y = int(np.floor(center_y_in_box_units))
+                    center_x_rel_to_box = center_x_in_box_units % 1.
+                    center_y_rel_to_box = center_y_in_box_units % 1.
 
                     if grid_x < self.config['GRID_W'] and grid_y < self.config['GRID_H']:
                         obj_indx  = self.config['LABELS'].index(obj['name'])
                         
-                        center_w = (obj['xmax'] - obj['xmin']) / (float(self.config['IMAGE_W']) / self.config['GRID_W']) # unit: grid cell
-                        center_h = (obj['ymax'] - obj['ymin']) / (float(self.config['IMAGE_H']) / self.config['GRID_H']) # unit: grid cell
+                        center_w = np.sqrt((obj['xmax'] - obj['xmin']) / float(train_instance['width'])) # relative to image
+                        center_h = np.sqrt((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
                         
-                        box = [center_x, center_y, center_w, center_h]
-                        if y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4] == 1:
-                            nextBoxIndex+=1
+                        box = [center_x_rel_to_box, center_y_rel_to_box, center_w, center_h]
+                
+                nextBoxIndex = 0
+                if y_batch[instance_count, grid_y, grid_x, 0, 4] == 0:
+                    nextBoxIndex = 0
+                elif y_batch[instance_count, grid_y, grid_x, 1, 4] == 0:
+                    nextBoxIndex = 1
+                else:
+                    continue
 
-                        # assign ground truth x, y, w, h, confidence and class probs to y_batch
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
-                            
+                # assign ground truth x, y, w, h, confidence and class probs to y_batch
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
+                    
+                nextBoxIndex+=1
+
             # assign input image to x_batch
             if self.checkSanity:
                 # plot image and bounding boxes for sanity check
                 for obj in all_objs:
                     if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
-                        cv2.rectangle(img[:,:,::-1], (obj['xmin'],obj['ymin']), (obj['xmax'],obj['ymax']), (255,0,0), 3)
-                        cv2.putText(img[:,:,::-1], obj['name'], 
+                        cv2.rectangle(img, (obj['xmin'],obj['ymin']), (obj['xmax'],obj['ymax']), (255,0,0), 3)
+                        cv2.putText(img, obj['name'], 
                                     (obj['xmin']+2, obj['ymin']+12), 
                                     0, 1.2e-3 * img.shape[0], 
                                     (0,255,0), 2)
                         
-                x_batch[instance_count] = img
+                x_batch[instance_count] = normalizeImage(img)
             else:
                 x_batch[instance_count] = normalizeImage(img)
 
@@ -152,7 +167,7 @@ class BatchGenerator(Sequence):
             instance_count += 1  
 
         #print(' new batch created', idx)
-
+        np.save("./debug/auto_true_batch", y_batch)
         return x_batch, y_batch
 
     def on_epoch_end(self):

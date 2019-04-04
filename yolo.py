@@ -6,7 +6,8 @@ import tensorflow as tf
 from keras.models import Sequential
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
-from keras.backend import print_tensor
+import keras.backend as K
+
 
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
@@ -17,7 +18,7 @@ CLASS_WEIGHTS = np.array([1.5,0.7,0.5], dtype='float32')
 from dataHandler import BatchGenerator, read_Imgs
 import cv2
 
-from utils import decode_netout, compute_overlap, compute_ap, normalizeImage
+from utils import decode_netout, compute_overlap, compute_ap, normalizeImage, draw_boxes
 
 # Constants
 NUM_CLASSES = len(CLASSES)
@@ -28,7 +29,7 @@ NUM_BOXES = 2
 NUM_DENSE_NODES = (GRID_DIM*GRID_DIM*NUM_BOXES*(BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES))
 OUTPUT_SHAPE = (GRID_DIM, GRID_DIM, NUM_BOXES, BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES)
 
-BATCH_SIZE = 16
+BATCH_SIZE = 8
 INPUT_SIZE = 448
 
 WEIGHT_PATH = "tiny_yolov1_weights.h5"
@@ -116,6 +117,7 @@ class YOLO(object):
         model.add(Reshape(OUTPUT_SHAPE))
 
         if os.path.isfile(WEIGHT_PATH):
+            print("Reloading weights from " + WEIGHT_PATH)
             model.load_weights(WEIGHT_PATH)
 
         return model
@@ -126,13 +128,13 @@ class YOLO(object):
 
         image = normalizeImage(image)
 
-        input_image = image[:, :, ::-1]  # Reverses the channels
-        input_image = np.expand_dims(input_image, 0)
+        # input_image = image[:, :, ::-1]  # Reverses the channels
+        input_image = np.expand_dims(image, 0)
 
         netout = self.model.predict([input_image])[0]
         boxes = decode_netout(netout, self.nb_class)
 
-        return boxes
+        return boxes, netout
 
     def evaluate(self,
                  generator,
@@ -149,7 +151,7 @@ class YOLO(object):
             raw_height, raw_width, raw_channels = raw_image.shape
 
             # make the boxes and the labels
-            pred_boxes = self.predict(raw_image)
+            pred_boxes, _ = self.predict(raw_image)
 
             score = np.array([box.score for box in pred_boxes])
             pred_labels = np.array([box.label for box in pred_boxes])
@@ -240,8 +242,6 @@ class YOLO(object):
               valid_times,    # the number of times to repeat the validation set, often used for small datasets
               nb_epochs,      # number of epoches
               learning_rate,  # the learning rate
-              warmup_epochs,  # number of initial batches to let the model familiarize with the new dataset
-              saved_weights_name=WEIGHT_PATH,
               debug=False):
 
         self.batch_size = BATCH_SIZE
@@ -252,8 +252,9 @@ class YOLO(object):
         self.debug = debug
 
         # Load Images
-        train_imgs = read_Imgs()
 
+        train_imgs = read_Imgs()
+        
         validStartIndex = int(len(train_imgs)*0.8)
         test_imgs = train_imgs[validStartIndex:]
         train_imgs = train_imgs[:validStartIndex]
@@ -274,9 +275,10 @@ class YOLO(object):
 
         train_generator = BatchGenerator(train_imgs,
                                          generator_config)
-
+        
         test_generator = BatchGenerator(test_imgs,
-                                        generator_config)
+                                        generator_config,
+                                        should_aug=False)
 
         ############################################
         # Compile the model
@@ -292,17 +294,19 @@ class YOLO(object):
 
         early_stop = EarlyStopping(monitor='val_loss',
                                    min_delta=0.001,
-                                   patience=3,
+                                   patience=5,
                                    mode='min',
                                    verbose=1)
-        checkpoint = ModelCheckpoint(saved_weights_name,
+        checkpoint = ModelCheckpoint(WEIGHT_PATH,
                                      monitor='val_loss',
                                      verbose=1,
                                      save_best_only=True,
+                                     save_weights_only=True,
                                      mode='min',
                                      period=1)
-        tensorboard = TensorBoard(log_dir=os.path.expanduser('~/logs/'),
-                                  histogram_freq=0,
+        tensorboard = TensorBoard(log_dir="training_metadata/1/",
+                                #   histogram_freq=2,
+                                #   write_grads=True,
                                   # write_batch_performance=True,
                                   write_graph=True,
                                   write_images=False)
@@ -314,15 +318,14 @@ class YOLO(object):
         self.model.fit_generator(generator=train_generator,
                                  steps_per_epoch=len(
                                      train_generator) * train_times,
-                                 epochs=warmup_epochs + nb_epochs,
+                                 epochs= nb_epochs,
                                  verbose=2 if debug else 1,
                                  validation_data=test_generator,
                                  validation_steps=len(
                                      test_generator) * valid_times,
-                                 callbacks=[early_stop,
-                                            checkpoint, tensorboard],
-                                 workers=3,
-                                 max_queue_size=8)
+                                 callbacks=[early_stop,checkpoint, tensorboard],
+                                 workers=1,
+                                 max_queue_size=3)
 
         ############################################
         # Compute mAP on the validation set
@@ -336,38 +339,23 @@ class YOLO(object):
             sum(average_precisions.values()) / len(average_precisions)))
 
     def custom_loss(self, y_true, y_pred):
-        mask_shape = tf.shape(y_true)[:4] #Masking out the four dimension Batch, width, height, num_box
+        # cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(self.grid_w), [self.grid_h]), (1, self.grid_h, self.grid_w, 1, 1)))
+        # cell_y = tf.transpose(cell_x, (0,2,1,3,4))
 
-        '''
-        Creating a grid for calculations of actual positions of boxes in image
-        '''
-        cell_x = tf.to_float(tf.reshape(tf.tile(tf.range(GRID_DIM), [GRID_DIM]), (1, GRID_DIM, GRID_DIM, 1, 1)))
-        cell_y = tf.transpose(cell_x, (0,2,1,3,4))
-        cell_grid = tf.tile(tf.concat([cell_x,cell_y], -1), [BATCH_SIZE, 1, 1, NUM_BOXES, 1])
-
-        '''
-        Init masks
-        '''
-        coord_mask = tf.zeros(mask_shape)
-        class_mask = tf.zeros(mask_shape)
-        conf_mask_neg = tf.zeros(mask_shape)
-        conf_mask_pos = tf.zeros(mask_shape)
-
-        # For debug
-        total_recall = tf.Variable(0.)
+        # cell_grid = tf.tile(tf.concat([cell_x,cell_y], -1), [self.batch_size, 1, 1, self.nb_box, 1])
 
         """
         Load prediction
         """
         ### get x and y in terms of grid
-        pred_box_xy = y_pred[..., :2] + cell_grid
+        pred_box_xy = y_pred[..., :2] #+ cell_grid
                 
         ### account for network predicting squares of w and h
         sqrt_pred_box_wh = y_pred[..., 2:4]
         pred_box_wh = tf.square(sqrt_pred_box_wh)    
             
         ### confidence should be in [0,1]
-        pred_box_conf = tf.sigmoid(y_pred[..., 4])
+        pred_box_conf = y_pred[..., 4]
                 
         ### class probabilities
         pred_box_class = y_pred[..., 5:]
@@ -379,7 +367,9 @@ class YOLO(object):
         true_box_xy = y_true[..., 0:2] # relative position to the containing cell
 
         ### adjust w and h
-        true_box_wh = y_true[..., 2:4] # number of cells accross, horizontally and vertically
+        sqrt_true_box_wh = y_true[..., 2:4] # number of cells accross, horizontally and vertically
+        true_box_wh = tf.square(sqrt_true_box_wh)
+
         ### Find iou for conf given obj, else 0
         true_wh_half = true_box_wh / 2.
         true_mins    = true_box_xy - true_wh_half
@@ -402,67 +392,40 @@ class YOLO(object):
         true_box_conf = iou_scores * y_true[..., 4]
 
         ### adjust class probabilities
-        true_box_class = tf.argmax(y_true[..., 5:], -1)
+        true_box_class = y_true[..., 5:]
+
         """
         Determine the masks
         """
         ### coordinate mask: simply the position of the ground truth boxes (the predictors)
-        coord_mask = tf.expand_dims(y_true[..., 4], axis=-1) * COORD_SCALE
-
-        ### confidence mask: penelize predictors + penalize boxes with low IOU
-        # penalize the confidence of the boxes, which have IOU with some ground truth box < 0.6
-        just_boxes = tf.reshape(y_true[..., 0:4], (BATCH_SIZE,1,1,1,GRID_DIM*GRID_DIM*NUM_BOXES,4))
-        true_xy = just_boxes[...,0:2]
-        true_wh = just_boxes[...,2:4]
-
-        true_wh_half = true_wh / 2.
-        true_mins    = true_xy - true_wh_half
-        true_maxes   = true_xy + true_wh_half
-
-        pred_xy = tf.expand_dims(pred_box_xy, 4)
-        pred_wh = tf.expand_dims(pred_box_wh, 4)
-
-        pred_wh_half = pred_wh / 2.
-        pred_mins    = pred_xy - pred_wh_half
-        pred_maxes   = pred_xy + pred_wh_half    
-
-        intersect_mins  = tf.maximum(pred_mins,  true_mins)
-        intersect_maxes = tf.minimum(pred_maxes, true_maxes)
-        intersect_wh    = tf.maximum(intersect_maxes - intersect_mins, 0.)
-        intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
-
-        true_areas = true_wh[..., 0] * true_wh[..., 1]
-        pred_areas = pred_wh[..., 0] * pred_wh[..., 1]
-
-        union_areas = pred_areas + true_areas - intersect_areas
-        iou_scores  = tf.truediv(intersect_areas, union_areas)
-
-        best_ious = tf.reduce_max(iou_scores, axis=4)
-        conf_mask_neg = tf.to_float(best_ious < 0.6) * (1 - y_true[..., 4]) * NO_OBJECT_SCALE
-        conf_mask_pos = y_true[..., 4] * OBJECT_SCALE
-
-        ### class mask: simply the position of the ground truth boxes (the predictors)
-        # class_mask = y_true[..., 4] * true_box_class * self.class_scale
-        class_mask = y_true[..., 4] * tf.gather(CLASS_WEIGHTS, true_box_class) * CLASS_SCALE       
+        obj_mask_for_mult_attr = tf.expand_dims(y_true[..., 4], axis=-1)
+        obj_mask_for_one_attr = y_true[..., 4]
+        coord_mask =  obj_mask_for_mult_attr * COORD_SCALE
+        conf_mask_obj = obj_mask_for_one_attr * OBJECT_SCALE
+        conf_mask_no_obj = (1-obj_mask_for_one_attr) * NO_OBJECT_SCALE
 
         """
-        Finalize the loss
+        Summarize the loss
         """
-        nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
-        nb_conf_box_neg = tf.reduce_sum(tf.to_float(conf_mask_neg > 0.0))
-        nb_conf_box_pos = tf.reduce_sum(tf.to_float(conf_mask_pos > 0.0))
-        nb_class_box = tf.reduce_sum(tf.to_float(class_mask > 0.0))
+        # nb_coord_box = tf.reduce_sum(tf.to_float(coord_mask > 0.0))
+        # nb_conf_box_neg = tf.reduce_sum(tf.to_float(conf_mask_no_obj > 0.0))
+        # nb_conf_box_pos = tf.reduce_sum(tf.to_float(conf_mask_obj > 0.0))
+        # nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
 
-        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy)     * coord_mask) / (nb_coord_box + 1e-6) / 2.
-        loss_wh    = tf.reduce_sum(tf.square(true_box_wh-pred_box_wh)     * coord_mask) / (nb_coord_box + 1e-6) / 2.
-        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_neg) / (nb_conf_box_neg + 1e-6) / 2.
-        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_pos) / (nb_conf_box_pos + 1e-6) / 2.
-        loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=true_box_class, logits=pred_box_class)
-        loss_class = tf.reduce_sum(loss_class * class_mask) / (nb_class_box + 1e-6)
+        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_wh    = tf.reduce_sum(tf.square(sqrt_true_box_wh-sqrt_pred_box_wh) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
+        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj, axis=[1,2,3]) #/ (nb_conf_box_neg + 1e-6) / 2.
+        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj, axis=[1,2,3]) #/ (nb_conf_box_pos + 1e-6) / 2.
+        loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr, axis=[1,2,3,4])#/(nb_obj + 1e-6)
 
         loss = loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class
 
+        # zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
+        
+        # loss_names = ["loss_xy", "loss_wh", "loss_conf_neg", "loss_conf_pos", "loss_class"]
+
         if self.debug:
+                total_recall = tf.Variable(0.)
                 nb_true_box = tf.reduce_sum(y_true[..., 4])
                 nb_pred_box = tf.reduce_sum(tf.to_float(true_box_conf > 0.5) * tf.to_float(pred_box_conf > 0.3))
                 
@@ -479,3 +442,14 @@ class YOLO(object):
                 loss = tf.Print(loss, [total_recall], message='Average Recall \t')
 
         return loss
+
+    def sanity_loss(self, y_true, y_pred):
+        return K.sum(K.square(y_pred - y_true), axis=-1)
+
+    def testImg(self, imgPath):
+        img = cv2.imread(imgPath)
+        boxes, netout = self.predict(img)
+        np.save("./debug/auto_pred_batch", netout)
+        img = draw_boxes(img, boxes, CLASSES)
+        cv2.imwrite("./data/output/" + imgPath[:-4].split("/")[-1] + "_detected" + imgPath[-4:], img)
+

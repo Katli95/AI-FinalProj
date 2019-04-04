@@ -1,5 +1,6 @@
 import os
 import copy
+import random
 import xml.etree.ElementTree as ET
 
 import cv2 #open cv
@@ -8,6 +9,7 @@ from keras.utils import Sequence
 
 from utils import BoundBox, normalizeImage
 from yolo import CLASSES
+from data_aug.data_aug import *
 
 imgDir = "./data/img"
 annDir = "./data/annotations"
@@ -54,16 +56,16 @@ def read_Imgs():
     return all_imgs * 80
 
 class BatchGenerator(Sequence):
-    def __init__(self, images, 
-                       config,
-                       checkSanity = False):
+    def __init__(self, images, config, should_aug=True, checkSanity = False):
         self.generator = None
 
         self.images = images
         np.random.shuffle(self.images)
         
         self.config = config
+        self.should_aug = should_aug
         self.checkSanity = checkSanity
+        self.seq = Sequence([RandomHSV(40, 40, 30),RandomHorizontalFlip(), RandomScale(), RandomTranslate(0.3,diff=True), RandomRotate(10)])
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -106,6 +108,8 @@ class BatchGenerator(Sequence):
             img = cv2.resize(cv2.imread(image_name), (self.config['IMAGE_W'],self.config['IMAGE_H']))
             all_objs = copy.deepcopy(train_instance['objects'])
             
+            boxes = np.array([])
+
             # construct output from object's x, y, w, h
             for obj in all_objs:
                 if obj['xmax'] > obj['xmin'] and obj['ymax'] > obj['ymin']:
@@ -130,21 +134,21 @@ class BatchGenerator(Sequence):
                         center_h = np.sqrt((obj['ymax'] - obj['ymin']) / float(train_instance['height'])) # relative to image
                         
                         box = [center_x_rel_to_box, center_y_rel_to_box, center_w, center_h]
-                        
-                        nextBoxIndex = 0
-                        if y_batch[instance_count, grid_y, grid_x, 0, 4] == 0:
-                            nextBoxIndex = 0
-                        elif y_batch[instance_count, grid_y, grid_x, 1, 4] == 0:
-                            nextBoxIndex = 1
-                        else:
-                            continue
+                
+                nextBoxIndex = 0
+                if y_batch[instance_count, grid_y, grid_x, 0, 4] == 0:
+                    nextBoxIndex = 0
+                elif y_batch[instance_count, grid_y, grid_x, 1, 4] == 0:
+                    nextBoxIndex = 1
+                else:
+                    continue
 
-                        # assign ground truth x, y, w, h, confidence and class probs to y_batch
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
-                        y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
-                            
-                        nextBoxIndex+=1
+                # assign ground truth x, y, w, h, confidence and class probs to y_batch
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 0:4] = box
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 4  ] = 1.
+                y_batch[instance_count, grid_y, grid_x, nextBoxIndex, 5+obj_indx] = 1.
+                    
+                nextBoxIndex+=1
 
             # assign input image to x_batch
             if self.checkSanity:

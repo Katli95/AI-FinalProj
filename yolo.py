@@ -132,7 +132,7 @@ class YOLO(object):
         input_image = np.expand_dims(image, 0)
 
         netout = self.model.predict([input_image])[0]
-        boxes = decode_netout(netout, self.nb_class)
+        boxes = decode_netout(netout.copy(), self.nb_class)
 
         return boxes, netout
 
@@ -254,7 +254,7 @@ class YOLO(object):
         # Load Images
 
         train_imgs = read_Imgs()
-        
+
         validStartIndex = int(len(train_imgs)*0.8)
         test_imgs = train_imgs[validStartIndex:]
         train_imgs = train_imgs[:validStartIndex]
@@ -353,6 +353,8 @@ class YOLO(object):
         sqrt_pred_box_wh = y_pred[..., 2:4]
         pred_box_wh = tf.square(sqrt_pred_box_wh)    
             
+        pred_box_wh_cell = pred_box_wh * (1/GRID_DIM)
+
         ### confidence should be in [0,1]
         pred_box_conf = y_pred[..., 4]
                 
@@ -369,12 +371,14 @@ class YOLO(object):
         sqrt_true_box_wh = y_true[..., 2:4] # number of cells accross, horizontally and vertically
         true_box_wh = tf.square(sqrt_true_box_wh)
 
+        true_box_wh_cell = true_box_wh * (1/GRID_DIM)
+
         ### Find iou for conf given obj, else 0
-        true_wh_half = true_box_wh / 2.
+        true_wh_half = true_box_wh_cell / 2.
         true_mins    = true_box_xy - true_wh_half
         true_maxes   = true_box_xy + true_wh_half
 
-        pred_wh_half = pred_box_wh / 2.
+        pred_wh_half = pred_box_wh_cell / 2.
         pred_mins    = pred_box_xy - pred_wh_half
         pred_maxes   = pred_box_xy + pred_wh_half
 
@@ -383,8 +387,8 @@ class YOLO(object):
         intersect_wh    = tf.maximum(intersect_maxes - intersect_mins, 0.)
         intersect_areas = intersect_wh[..., 0] * intersect_wh[..., 1]
 
-        true_areas = true_box_wh[..., 0] * true_box_wh[..., 1]
-        pred_areas = pred_box_wh[..., 0] * pred_box_wh[..., 1]
+        true_areas = true_box_wh_cell[..., 0] * true_box_wh_cell[..., 1]
+        pred_areas = pred_box_wh_cell[..., 0] * pred_box_wh_cell[..., 1]
 
         union_areas = pred_areas + true_areas - intersect_areas
         iou_scores  = tf.where(tf.less(tf.abs(union_areas), 1e-4), union_areas, tf.truediv(intersect_areas, union_areas)) 
@@ -411,13 +415,12 @@ class YOLO(object):
         # nb_conf_box_pos = tf.reduce_sum(tf.to_float(conf_mask_obj > 0.0))
         # nb_obj = tf.reduce_sum(tf.to_float(obj_mask_for_one_attr > 0.0))
 
-        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
-        loss_wh    = tf.reduce_sum(tf.square(sqrt_true_box_wh-sqrt_pred_box_wh) * coord_mask, axis=[1,2,3,4]) #/ (nb_coord_box + 1e-6) / 2.
-        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj, axis=[1,2,3]) #/ (nb_conf_box_neg + 1e-6) / 2.
-        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj, axis=[1,2,3]) #/ (nb_conf_box_pos + 1e-6) / 2.
-        loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr, axis=[1,2,3,4])#/(nb_obj + 1e-6)
-
-        loss = loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class
+        loss_xy    = tf.reduce_sum(tf.square(true_box_xy-pred_box_xy) * coord_mask) #/ (nb_coord_box + 1e-6) / 2.
+        loss_wh    = tf.reduce_sum(tf.square(sqrt_true_box_wh-sqrt_pred_box_wh) * coord_mask) #/ (nb_coord_box + 1e-6) / 2.
+        loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj) #/ (nb_conf_box_neg + 1e-6) / 2.
+        loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj) #/ (nb_conf_box_pos + 1e-6) / 2.
+        loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr)#/(nb_obj + 1e-6)
+        loss = (loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class)/8
 
         # zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
         

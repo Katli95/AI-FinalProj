@@ -48,8 +48,10 @@ def read_Imgs():
         if len(img['objects']) > 0:
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
+            print(annotationFile)
+            break
 
-    return all_imgs
+    return all_imgs * 120
 
 class BatchGenerator(Sequence):
     def __init__(self, images, 

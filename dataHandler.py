@@ -63,7 +63,7 @@ class BatchGenerator(Sequence):
         self.config = config
         self.should_aug = should_aug
         self.checkSanity = checkSanity
-        self.seq = aug.Sequence([aug.RandomHSV(40, 40, 30),aug.RandomHorizontalFlip(), aug.RandomScale(), aug.RandomTranslate(0.3,diff=True), aug.RandomRotate(10)])
+        self.seq = aug.Sequence([aug.RandomRotate(10), aug.RandomHSV(40, 40, 30),aug.RandomHorizontalFlip(), aug.RandomScale(), aug.RandomTranslate(0.2,diff=True)])
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -108,8 +108,15 @@ class BatchGenerator(Sequence):
             
             boxes = self.parse_objects(all_objs)
 
-            if self.should_aug and random.random() < 0.6:
-                img, boxes = self.seq(img.copy(), boxes.copy())
+            if self.should_aug and random.random() <= 1.0:
+                try:
+                    img, boxes = self.seq(img.copy(), boxes.copy())
+                except:
+                    image_name = train_instance['filename']
+                    img = cv2.imread(image_name)
+                    all_objs = copy.deepcopy(train_instance['objects'])
+                    
+                    boxes = self.parse_objects(all_objs)
 
             img = cv2.resize(img, (self.config['IMAGE_W'],self.config['IMAGE_H']))
 

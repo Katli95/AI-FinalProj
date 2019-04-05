@@ -9,7 +9,7 @@ from keras.models import Sequential
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
 from keras.optimizers import Adam
-from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
+from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard, ReduceLROnPlateau
 
 from utils import decode_netout, compute_overlap, compute_ap, normalizeImage, draw_boxes
 from config import *
@@ -260,7 +260,7 @@ class YOLO(object):
         ############################################
 
         optimizer = Adam(lr=learning_rate, beta_1=0.9,
-                         beta_2=0.999, epsilon=1e-08, decay=0.0)
+                         beta_2=0.999, epsilon=1e-08, decay=0.0005)
         self.model.compile(loss=self.sanity_loss, optimizer=optimizer)
 
         ############################################
@@ -268,8 +268,8 @@ class YOLO(object):
         ############################################
 
         early_stop = EarlyStopping(monitor='val_loss',
-                                   min_delta=0.001,
-                                   patience=5,
+                                   min_delta=0.0001,
+                                   patience=15,
                                    mode='min',
                                    verbose=1)
         checkpoint = ModelCheckpoint(WEIGHT_PATH,
@@ -285,6 +285,13 @@ class YOLO(object):
                                   # write_batch_performance=True,
                                   write_graph=True,
                                   write_images=False)
+        learning_rate_monitor = ReduceLROnPlateau(monitor='val_loss', 
+                                    min_delta=0.001,
+                                    factor=0.5, 
+                                    patience=5, 
+                                    min_lr=10**-9,
+                                    verbose=1,
+                                    mode='min')
 
         ############################################
         # Start the training process
@@ -298,7 +305,7 @@ class YOLO(object):
                                  validation_data=test_generator,
                                  validation_steps=len(
                                      test_generator) * valid_times,
-                                 callbacks=[early_stop,checkpoint, tensorboard],
+                                 callbacks=[early_stop,checkpoint, tensorboard,learning_rate_monitor],
                                  workers=1,
                                  max_queue_size=3)
 

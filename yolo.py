@@ -1,44 +1,19 @@
 import os
+import cv2
 import sys
 import numpy as np
-import tensorflow as tf
 
+import tensorflow as tf
+import keras.backend as K
 from keras.models import Sequential
 from keras.layers import Reshape, Activation, Conv2D, Input, MaxPooling2D, BatchNormalization, Flatten, Dense, Lambda
 from keras.layers.advanced_activations import LeakyReLU
-import keras.backend as K
-
-
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ModelCheckpoint, TensorBoard
 
-CLASSES = ["sphere", "can", "bottle"]
-CLASS_WEIGHTS = np.array([1.5,0.7,0.5], dtype='float32')
-
-from dataHandler import BatchGenerator, read_Imgs
-import cv2
-
 from utils import decode_netout, compute_overlap, compute_ap, normalizeImage, draw_boxes
-
-# Constants
-NUM_CLASSES = len(CLASSES)
-BOUNDING_BOX_ATTRIBUTES = 5  # 4 for x,y,w,h and 1 for confidence
-
-GRID_DIM = 7
-NUM_BOXES = 2
-NUM_DENSE_NODES = (GRID_DIM*GRID_DIM*NUM_BOXES*(BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES))
-OUTPUT_SHAPE = (GRID_DIM, GRID_DIM, NUM_BOXES, BOUNDING_BOX_ATTRIBUTES+NUM_CLASSES)
-
-BATCH_SIZE = 8
-INPUT_SIZE = 448
-
-WEIGHT_PATH = "tiny_yolov1_weights.h5"
-
-NO_OBJECT_SCALE = .5
-OBJECT_SCALE = 1.0
-COORD_SCALE = 5.0
-CLASS_SCALE = 1.0
-
+from config import *
+from dataHandler import BatchGenerator, read_Imgs
 
 class YOLO(object):
     def __init__(self):
@@ -277,7 +252,8 @@ class YOLO(object):
                                          generator_config)
         
         test_generator = BatchGenerator(test_imgs,
-                                        generator_config)
+                                        generator_config,
+                                        should_aug=False)
 
         ############################################
         # Compile the model
@@ -285,7 +261,7 @@ class YOLO(object):
 
         optimizer = Adam(lr=learning_rate, beta_1=0.9,
                          beta_2=0.999, epsilon=1e-08, decay=0.0)
-        self.model.compile(loss=self.custom_loss, optimizer=optimizer)
+        self.model.compile(loss=self.sanity_loss, optimizer=optimizer)
 
         ############################################
         # Make a few callbacks
@@ -303,7 +279,7 @@ class YOLO(object):
                                      save_weights_only=True,
                                      mode='min',
                                      period=1)
-        tensorboard = TensorBoard(log_dir="training_metadata/1/",
+        tensorboard = TensorBoard(log_dir="training_metadata/2/",
                                 #   histogram_freq=2,
                                 #   write_grads=True,
                                   # write_batch_performance=True,

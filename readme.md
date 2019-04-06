@@ -27,3 +27,4 @@ test.train(2, 1, 20, 10**-4, 0) # params are:
 
 ```
 
+P.S. we are currently pushing a newly trained model over the eight images above, the internet connection is slow and well make a pull request tomorrow (06.Apr.2019)

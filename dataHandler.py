@@ -50,9 +50,11 @@ def read_Imgs():
         if len(img['objects']) > 0 and all([x['name'] == 'sphere' for x in img['objects']]):
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
+            if len(all_imgs) >= 8:
+                break
             # print(annotationFile)
 
-    return all_imgs * 2
+    return all_imgs * 10
 
 class BatchGenerator(Sequence):
     def __init__(self, images, config, should_aug=True, checkSanity = False):
@@ -109,7 +111,7 @@ class BatchGenerator(Sequence):
             
             boxes = self.parse_objects(all_objs)
 
-            if self.should_aug and random.random() <= 0.6:
+            if self.should_aug and random.random() <= 0.0:
                 try:
                     img, boxes = self.seq(img.copy(), boxes.copy())
                 except:

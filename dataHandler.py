@@ -47,12 +47,12 @@ def read_Imgs():
                                 obj['ymax'] = int(round(float(dim.text)))
 
         # TODO: REMOVE 'and all(...' ONLY FOR TESTING THE NETWORK ON SPHERES!!  
-        if len(img['objects']) > 0:
+        if len(img['objects']) > 0 and all([x['name'] == 'sphere' for x in img['objects']]):
             img['objects'].sort(key=lambda x: CLASSES.index(x['name']))
             all_imgs += [img]
-            print(annotationFile)
+            # print(annotationFile)
 
-    return all_imgs * 120
+    return all_imgs * 2
 
 class BatchGenerator(Sequence):
     def __init__(self, images, config, should_aug=True, checkSanity = False):
@@ -64,7 +64,7 @@ class BatchGenerator(Sequence):
         self.config = config
         self.should_aug = should_aug
         self.checkSanity = checkSanity
-        self.seq = aug.Sequence([aug.RandomRotate(10), aug.RandomHSV(40, 40, 30),aug.RandomHorizontalFlip(), aug.RandomScale(), aug.RandomTranslate(0.2,diff=True)])
+        self.seq = aug.Sequence([aug.RandomRotate(6), aug.RandomHSV(40, 40, 30),aug.RandomHorizontalFlip()])#, aug.RandomScale(), aug.RandomTranslate(0.2,diff=True)])
 
     def __len__(self):
         return int(np.ceil(float(len(self.images))/self.config['BATCH_SIZE']))   
@@ -116,7 +116,6 @@ class BatchGenerator(Sequence):
                     image_name = train_instance['filename']
                     img = cv2.imread(image_name)
                     all_objs = copy.deepcopy(train_instance['objects'])
-                    
                     boxes = self.parse_objects(all_objs)
 
             img = cv2.resize(img, (self.config['IMAGE_W'],self.config['IMAGE_H']))

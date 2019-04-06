@@ -107,7 +107,7 @@ class YOLO(object):
         input_image = np.expand_dims(image, 0)
 
         netout = self.model.predict([input_image])[0]
-        boxes = decode_netout(netout.copy(), self.nb_class)
+        boxes = decode_netout(netout.copy(), self.nb_class, obj_threshold=0.6)
 
         return boxes, netout
 
@@ -229,6 +229,7 @@ class YOLO(object):
         # Load Images
 
         train_imgs = read_Imgs()
+        # test_imgs = train_imgs
 
         validStartIndex = int(len(train_imgs)*0.8)
         test_imgs = train_imgs[validStartIndex:]
@@ -279,14 +280,14 @@ class YOLO(object):
                                      save_weights_only=True,
                                      mode='min',
                                      period=1)
-        tensorboard = TensorBoard(log_dir="training_metadata/2/",
+        tensorboard = TensorBoard(log_dir="training_metadata/2/custom-loss-test/",
                                 #   histogram_freq=2,
                                 #   write_grads=True,
                                   # write_batch_performance=True,
                                   write_graph=True,
                                   write_images=False)
         learning_rate_monitor = ReduceLROnPlateau(monitor='val_loss', 
-                                    min_delta=0.001,
+                                    min_delta=0.01,
                                     factor=0.5, 
                                     patience=5, 
                                     min_lr=10**-9,
@@ -306,7 +307,7 @@ class YOLO(object):
                                  validation_steps=len(
                                      test_generator) * valid_times,
                                  callbacks=[early_stop,checkpoint, tensorboard,learning_rate_monitor],
-                                 workers=1,
+                                 workers=2,
                                  max_queue_size=3)
 
         ############################################
@@ -403,7 +404,7 @@ class YOLO(object):
         loss_conf_neg = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_no_obj) #/ (nb_conf_box_neg + 1e-6) / 2.
         loss_conf_pos = tf.reduce_sum(tf.square(true_box_conf-pred_box_conf) * conf_mask_obj) #/ (nb_conf_box_pos + 1e-6) / 2.
         loss_class = tf.reduce_sum(tf.square(true_box_class - pred_box_class)* obj_mask_for_mult_attr)#/(nb_obj + 1e-6)
-        loss = (loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class)/8
+        loss = loss_xy + loss_wh + loss_conf_pos + loss_conf_neg + loss_class
 
         # zero_losses = [tf.less(x,1e-5).eval() for x in [loss_xy, loss_wh, loss_conf_neg, loss_conf_pos, loss_class]]
         
